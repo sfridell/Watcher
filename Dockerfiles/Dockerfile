@@ -51,6 +51,9 @@ RUN \
   python3 -m pip install --upgrade kivymd
 
 RUN \
+  python3 -m pip install --upgrade fabric
+
+RUN \
   python3 -m pip install --upgrade python-lsp-server
 RUN \
   mkdir /home/pydevel/.ssh && chown pydevel /home/pydevel/.ssh && chmod 755 /home/pydevel/.ssh
