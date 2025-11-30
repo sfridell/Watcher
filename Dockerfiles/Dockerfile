@@ -55,6 +55,10 @@ RUN \
 
 RUN \
   python3 -m pip install --upgrade python-lsp-server
+
+RUN \
+  python3 -m pip install --upgrade tabulate
+  
 RUN \
   mkdir /home/pydevel/.ssh && chown pydevel /home/pydevel/.ssh && chmod 755 /home/pydevel/.ssh
   
