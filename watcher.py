@@ -53,9 +53,12 @@ def rm_dhcp_static_lease(args, connections, output):
     result = conn.run(f'nvram set static_leases=\"{lease_string}\"')
     if result.exited != 0:
         raise Exception('remote set command failed')
-    result = conn.run('nvram show | grep static_leases', hide=True)
+    result = conn.run('nvram commit', hide=True)
     if result.exited != 0:
         raise Exception('remote commit command failed')
+    result = conn.run('service dnsmasq restart', hide=True)
+    if result.exited != 0:
+        raise Exception('remote dnsmasq restart command failed')
     print(f'Static lease for {args.hostname} removed')
 
 def new_dhcp_static_lease(args, connections, output):
@@ -80,9 +83,15 @@ def new_dhcp_static_lease(args, connections, output):
     for d in data:
         lease_string = lease_string + f'{d[0]}={d[1]}={d[2]}= '
     lease_string = lease_string + f'{args.mac}={args.hostname}={args.ip}= '
-    result = conn.run(f'nvram set static_leases=\"{lease_string}\" | nvram commit')
+    result = conn.run(f'nvram set static_leases=\"{lease_string}\"')
     if result.exited != 0:
         raise Exception('remote set command failed')
+    result = conn.run('nvram commit', hide=True)
+    if result.exited != 0:
+        raise Exception('remote commit command failed')
+    result = conn.run('service dnsmasq restart', hide=True)
+    if result.exited != 0:
+        raise Exception('remote dnsmasq restart command failed')
     print(f'Static lease for {args.hostname} added')
 
 def get_args(argv):
