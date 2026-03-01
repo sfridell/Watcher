@@ -91,3 +91,8 @@ class ConnectionDB:
         '''
         for s in self.connections:
             json.dump(s, output)
+
+    def show_connection(self, args, output):
+        ''' List details of a particular connection
+        '''
+        json.dump(self.connections[args.connection], output)
