@@ -33,7 +33,7 @@ RUN \
   python3 -m pip install "kivy[base]" kivy-examples
 
 RUN \
-  apt-get update && apt-get install -y --no-install-recommends git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client
+  apt-get update && apt-get install -y --no-install-recommends curl git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client
   
 RUN \
   python3 -m pip install --upgrade Cython==0.29.33 virtualenv
@@ -61,10 +61,12 @@ RUN \
   
 RUN \
   mkdir /home/pydevel/.ssh && chown pydevel /home/pydevel/.ssh && chmod 755 /home/pydevel/.ssh
-  
+
 USER pydevel
   
 RUN \
   git clone https://github.com/sfridell/MyEmacs.git /home/pydevel/.emacs.d
 
+RUN \
+  curl -fsSL https://opencode.ai/install | bash
   
