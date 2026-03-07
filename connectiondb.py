@@ -5,6 +5,7 @@ from fabric import Connection
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
+from routers import get_router_handler
 
 class ConnectionDB:
     def __init__(self):
@@ -58,6 +59,22 @@ class ConnectionDB:
                            "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
                        })
         return c
+
+    def get_connection_with_handler(self, name, output):
+        ''' Create a fabric connection and return it with the appropriate router handler
+        '''
+        if name not in self.connections:
+            print(f'ERROR: connection to {name} does not exist', file=output)
+            return None, None
+        md = self.connections[name]
+        c = Connection(host=md['ip'], user=md['username'], port=md['port'],
+                       connect_kwargs={
+                           "key_filename": f"./keyfiles/{name}_rsa",
+                           "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
+                       })
+        router_type = md.get('router_type', 'ddwrt')
+        handler = get_router_handler(router_type)
+        return c, handler
         
     def new_connection(self, args, output):
         ''' Setup a new connection to a router, and save the connections object
@@ -83,7 +100,12 @@ class ConnectionDB:
             print(f.read())
 
         # save the connection metadata
-        self.connections[args.name] = { 'ip' : args.ip, 'port' : args.port, 'username' : args.username }
+        self.connections[args.name] = {
+            'ip': args.ip,
+            'port': args.port,
+            'username': args.username,
+            'router_type': args.router_type
+        }
         self._save_connections()
         
     def list_connections(self, output):
