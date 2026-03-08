@@ -1,0 +1,219 @@
+#:kivy 2.0
+#:import dp kivy.metrics.dp
+
+<ConnectionListScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            text: 'Watcher -- Connections'
+            size_hint_y: 0.1
+            font_size: '20sp'
+            bold: True
+        
+        ScrollView:
+            BoxLayout:
+                id: button_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                spacing: dp(5)
+                height: self.minimum_height
+
+<ConnectionMenuScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.1
+            font_size: '20sp'
+            bold: True
+        
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: dp(10)
+            size_hint_y: 0.8
+            
+            Button:
+                text: 'View DHCP Clients'
+                font_size: '18sp'
+                on_press: root.show_clients()
+            
+            Button:
+                text: 'View Static Leases'
+                font_size: '18sp'
+                on_press: root.show_leases()
+            
+            Button:
+                text: 'View Config'
+                font_size: '18sp'
+                on_press: root.show_config()
+        
+        Button:
+            text: 'Back'
+            size_hint_y: 0.1
+            font_size: '16sp'
+            on_press: root.go_back()
+
+<ClientsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+        
+        BoxLayout:
+            size_hint_y: 0.08
+            spacing: dp(2)
+            
+            Label:
+                text: 'MAC'
+                size_hint_x: 0.35
+                bold: True
+                font_size: '14sp'
+            
+            Label:
+                text: 'IP'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '14sp'
+            
+            Label:
+                text: 'Hostname'
+                size_hint_x: 0.35
+                bold: True
+                font_size: '14sp'
+        
+        ScrollView:
+            BoxLayout:
+                id: data_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                spacing: dp(2)
+                height: self.minimum_height
+        
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+            
+            Button:
+                text: 'Refresh'
+                font_size: '16sp'
+                on_press: root.load_data()
+            
+            Button:
+                text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<StaticLeasesScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+        
+        BoxLayout:
+            size_hint_y: 0.08
+            spacing: dp(2)
+            
+            Label:
+                text: 'MAC'
+                size_hint_x: 0.35
+                bold: True
+                font_size: '14sp'
+            
+            Label:
+                text: 'Hostname'
+                size_hint_x: 0.35
+                bold: True
+                font_size: '14sp'
+            
+            Label:
+                text: 'IP'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '14sp'
+        
+        ScrollView:
+            BoxLayout:
+                id: data_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                spacing: dp(2)
+                height: self.minimum_height
+        
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+            
+            Button:
+                text: 'Refresh'
+                font_size: '16sp'
+                on_press: root.load_data()
+            
+            Button:
+                text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<ConfigScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+        
+        TextInput:
+            id: config_text
+            size_hint_y: 0.82
+            font_size: '12sp'
+            readonly: True
+            multiline: True
+        
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+            
+            Button:
+                text: 'Refresh'
+                font_size: '16sp'
+                on_press: root.load_data()
+            
+            Button:
+                text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<ConnectionButton@Button>:
+    size_hint_y: None
+    height: dp(50)
+    font_size: '18sp'
+
+<DataRow@BoxLayout>:
+    size_hint_y: None
+    height: dp(40)
+    spacing: dp(2)

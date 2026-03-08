@@ -1,6 +1,7 @@
 """
 Tool to monitor home network
 """
+import logging
 import connectiondb
 import argparse
 import sys
@@ -8,6 +9,11 @@ import io
 import re
 import json
 from tabulate import tabulate
+
+# Suppress Fabric debug logging
+logging.getLogger('paramiko').setLevel(logging.WARNING)
+logging.getLogger('invoke').setLevel(logging.WARNING)
+logging.getLogger('fabric').setLevel(logging.WARNING)
 
 def list_dhcp_clients(args, connections, output):
     '''Connect to named router and list the connected clients
