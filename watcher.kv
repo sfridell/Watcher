@@ -283,6 +283,11 @@
                 on_press: root.add_vlan()
             
             Button:
+                text: 'Restrictions'
+                font_size: '16sp'
+                on_press: root.show_restrictions()
+            
+            Button:
                 text: 'Refresh'
                 font_size: '16sp'
                 on_press: root.load_data()
@@ -569,6 +574,129 @@
             
             Button:
                 text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<VlanRestrictionsScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+        
+        ScrollView:
+            BoxLayout:
+                id: data_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                spacing: dp(2)
+                height: self.minimum_height
+        
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+            
+            Button:
+                text: 'Add Restriction'
+                font_size: '14sp'
+                on_press: root.add_restriction()
+            
+            Button:
+                text: 'Refresh'
+                font_size: '16sp'
+                on_press: root.load_data()
+            
+            Button:
+                text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<RestrictionAddScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+        
+        Label:
+            id: title_label
+            text: 'Add Restriction'
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+        
+        BoxLayout:
+            size_hint_y: 0.02
+            spacing: dp(5)
+            
+            Label:
+                text: 'From VLAN ID:'
+                size_hint_x: 0.4
+                font_size: '14sp'
+            
+            TextInput:
+                id: from_vlan
+                size_hint_x: 0.6
+                font_size: '14sp'
+                input_filter: 'int'
+        
+        BoxLayout:
+            size_hint_y: 0.02
+            spacing: dp(5)
+            
+            Label:
+                text: 'To VLAN ID:'
+                size_hint_x: 0.4
+                font_size: '14sp'
+            
+            TextInput:
+                id: to_vlan
+                size_hint_x: 0.6
+                font_size: '14sp'
+                input_filter: 'int'
+        
+        BoxLayout:
+            size_hint_y: 0.02
+            spacing: dp(5)
+            
+            Label:
+                text: 'Description:'
+                size_hint_x: 0.4
+                font_size: '14sp'
+            
+            TextInput:
+                id: desc
+                size_hint_x: 0.6
+                font_size: '14sp'
+        
+        BoxLayout:
+            size_hint_y: 0.02
+            spacing: dp(5)
+            
+            Label:
+                text: 'Bidirectional:'
+                size_hint_x: 0.4
+                font_size: '14sp'
+            
+            CheckBox:
+                id: bidi
+        
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+            
+            Button:
+                text: 'Save'
+                font_size: '16sp'
+                on_press: root.save_restriction()
+            
+            Button:
+                text: 'Cancel'
                 font_size: '16sp'
                 on_press: root.go_back()
 

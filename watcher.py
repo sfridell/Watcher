@@ -66,6 +66,7 @@ def new_dhcp_static_lease(args, connections, output):
 
 
 def query_connection_config(conn, router, output):
+    """Query a router and return its full network + DHCP config as a JSON string."""
     dhcp = {
         "static_leases": []
     }
@@ -129,6 +130,7 @@ def manage_connection_config(args, connections, output):
 
 
 def config_snapshot(args, connections, output):
+    """Fetch the current config from a router and print it as JSON to stdout."""
     conn, router = connections.get_connection_with_handler(args.connection, output)
     if conn is None:
         return
@@ -137,6 +139,7 @@ def config_snapshot(args, connections, output):
 
 
 def config_save(args, connections, output):
+    """Fetch the current config from a router and write it to a file (--file path)."""
     conn, router = connections.get_connection_with_handler(args.connection, output)
     if conn is None:
         return
@@ -146,6 +149,7 @@ def config_save(args, connections, output):
 
 
 def config_validate(args, connections, output):
+    """Load a config file and run validation checks, printing any errors found."""
     config = NetworkConfig.from_json_file(args.file)
     errors = config.validate()
     if errors:
@@ -157,6 +161,7 @@ def config_validate(args, connections, output):
 
 
 def config_diff(args, connections, output):
+    """Compare a router's live config against a saved config file and print the differences."""
     conn, router = connections.get_connection_with_handler(args.connection, output)
     if conn is None:
         return
@@ -171,6 +176,7 @@ def config_diff(args, connections, output):
 
 
 def config_apply(args, connections, output):
+    """Apply a config file to a router after validating it. Supports --mode diff or full."""
     conn, router = connections.get_connection_with_handler(args.connection, output)
     if conn is None:
         return
@@ -188,6 +194,7 @@ def config_apply(args, connections, output):
 
 
 def config_verify(args, connections, output):
+    """Re-read a router's config and compare it against a saved spec file to confirm they match."""
     conn, router = connections.get_connection_with_handler(args.connection, output)
     if conn is None:
         return
@@ -202,6 +209,7 @@ def config_verify(args, connections, output):
 
 
 def vlan_list(args, connections, output):
+    """Display a table of VLANs from a local config file."""
     config = NetworkConfig.from_json_file(args.file)
     vlans = config.network.get("vlans", {})
     if not vlans:
@@ -223,6 +231,7 @@ def vlan_list(args, connections, output):
 
 
 def vlan_add(args, connections, output):
+    """Add a VLAN to a local config file and save it."""
     config = NetworkConfig.from_json_file(args.file)
     try:
         config.add_vlan(
@@ -244,6 +253,7 @@ def vlan_add(args, connections, output):
 
 
 def vlan_remove(args, connections, output):
+    """Remove a VLAN from a local config file and save it."""
     config = NetworkConfig.from_json_file(args.file)
     try:
         config.remove_vlan(vlan_id=args.id)
@@ -255,6 +265,7 @@ def vlan_remove(args, connections, output):
 
 
 def vlan_show(args, connections, output):
+    """Show detailed properties of a single VLAN from a local config file."""
     config = NetworkConfig.from_json_file(args.file)
     vlan_name = f"vlan{args.id}"
     vlans = config.network.get("vlans", {})
@@ -268,6 +279,7 @@ def vlan_show(args, connections, output):
 
 
 def port_list(args, connections, output):
+    """Display port-to-VLAN assignments from a local config file."""
     config = NetworkConfig.from_json_file(args.file)
     ports = config.network.get("ports", {})
     if not ports:
@@ -281,6 +293,7 @@ def port_list(args, connections, output):
 
 
 def port_assign(args, connections, output):
+    """Assign a port to a VLAN in a local config file and save it."""
     config = NetworkConfig.from_json_file(args.file)
     try:
         config.assign_port(port=args.port, vlan_id=args.vlan)
@@ -292,6 +305,7 @@ def port_assign(args, connections, output):
 
 
 def port_unassign(args, connections, output):
+    """Remove a port from a VLAN in a local config file and save it."""
     config = NetworkConfig.from_json_file(args.file)
     try:
         config.unassign_port(port=args.port, vlan_id=args.vlan)
@@ -302,7 +316,58 @@ def port_unassign(args, connections, output):
     print(f'Port {args.port} unassigned from VLAN {args.vlan}', file=output)
 
 
+def vlan_restrict(args, connections, output):
+    """Add a VLAN routing restriction to a local config file and save it."""
+    config = NetworkConfig.from_json_file(args.file)
+    try:
+        config.add_restriction(
+            from_id=args.from_id,
+            to_id=args.to_id,
+            description=args.description or "",
+            bidirectional=args.bidirectional,
+        )
+    except ValueError as e:
+        print(f'Error: {e}', file=output)
+        return
+    config.to_json_file(args.file)
+    bidi = " (bidirectional)" if args.bidirectional else ""
+    print(f'Restriction: vlan{args.from_id} -> vlan{args.to_id}{bidi} added to {args.file}', file=output)
+
+
+def vlan_unrestrict(args, connections, output):
+    """Remove a VLAN routing restriction from a local config file and save it."""
+    config = NetworkConfig.from_json_file(args.file)
+    config.remove_restriction(
+        from_id=args.from_id,
+        to_id=args.to_id,
+        bidirectional=args.bidirectional,
+    )
+    config.to_json_file(args.file)
+    bidi = " (bidirectional)" if args.bidirectional else ""
+    print(f'Restriction: vlan{args.from_id} -> vlan{args.to_id}{bidi} removed from {args.file}', file=output)
+
+
+def vlan_restrictions(args, connections, output):
+    """Display current VLAN routing restrictions from a local config file."""
+    config = NetworkConfig.from_json_file(args.file)
+    restrictions = config.network.get("vlan_restrictions", [])
+    if not restrictions:
+        print('No VLAN restrictions configured.', file=output)
+        return
+    headers = ['From', 'To', 'Bidirectional', 'Description']
+    rows = []
+    for r in restrictions:
+        rows.append([
+            f"vlan{r['from']}",
+            f"vlan{r['to']}",
+            "Yes" if r.get("bidirectional") else "No",
+            r.get("description", ""),
+        ])
+    print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
+
+
 def get_args(argv=sys.argv[1:]):
+    """Build and return the argparse parser with all subcommands for connections, dhcp, config, vlan, and port."""
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest='command')
 
@@ -390,6 +455,19 @@ def get_args(argv=sys.argv[1:]):
     vlan_show_cmd = vlan_commands.add_parser('show')
     vlan_show_cmd.add_argument("--file", type=str, required=True)
     vlan_show_cmd.add_argument("--id", type=int, required=True)
+    vlan_restrict_cmd = vlan_commands.add_parser('restrict')
+    vlan_restrict_cmd.add_argument("--file", type=str, required=True)
+    vlan_restrict_cmd.add_argument("--from", type=int, required=True, dest="from_id")
+    vlan_restrict_cmd.add_argument("--to", type=int, required=True, dest="to_id")
+    vlan_restrict_cmd.add_argument("--description", type=str, default="")
+    vlan_restrict_cmd.add_argument("--bidirectional", action="store_true", default=False)
+    vlan_unrestrict_cmd = vlan_commands.add_parser('unrestrict')
+    vlan_unrestrict_cmd.add_argument("--file", type=str, required=True)
+    vlan_unrestrict_cmd.add_argument("--from", type=int, required=True, dest="from_id")
+    vlan_unrestrict_cmd.add_argument("--to", type=int, required=True, dest="to_id")
+    vlan_unrestrict_cmd.add_argument("--bidirectional", action="store_true", default=False)
+    vlan_restrictions_cmd = vlan_commands.add_parser('restrictions')
+    vlan_restrictions_cmd.add_argument("--file", type=str, required=True)
 
     parser_port = subparsers.add_parser('port')
     port_commands = parser_port.add_subparsers(dest='port_command')
@@ -408,6 +486,7 @@ def get_args(argv=sys.argv[1:]):
 
 
 def process_command(argv=sys.argv[1:]):
+    """Main entry point: parse args, dispatch to the appropriate handler, and return captured output."""
     connections = connectiondb.ConnectionDB()
     args = get_args(argv)
     output = io.StringIO()
@@ -454,6 +533,12 @@ def process_command(argv=sys.argv[1:]):
             vlan_remove(args, connections, output)
         elif args.vlan_command == 'show':
             vlan_show(args, connections, output)
+        elif args.vlan_command == 'restrict':
+            vlan_restrict(args, connections, output)
+        elif args.vlan_command == 'unrestrict':
+            vlan_unrestrict(args, connections, output)
+        elif args.vlan_command == 'restrictions':
+            vlan_restrictions(args, connections, output)
     elif args.command == 'port':
         if args.port_command == 'list':
             port_list(args, connections, output)

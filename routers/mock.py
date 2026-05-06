@@ -80,7 +80,10 @@ _MOCK_STATE_DIR = "./mock_state"
 
 
 class MockRouter(RouterBase):
+    """In-memory router simulator for testing. Persists state to JSON files in ./mock_state/."""
+
     def __init__(self, state=None, name=None):
+        """Initialize with an explicit state dict, a named state file, or default state."""
         if state is not None:
             self._state = copy.deepcopy(state)
         elif name is not None:
@@ -93,6 +96,7 @@ class MockRouter(RouterBase):
         return os.path.join(_MOCK_STATE_DIR, f"{name}.json")
 
     def _load_state(self, name):
+        """Load router state from a JSON file in mock_state/, or use defaults if file doesn't exist."""
         path = self._state_path(name)
         if os.path.exists(path):
             with open(path, "r") as f:
@@ -101,6 +105,7 @@ class MockRouter(RouterBase):
             self._state = copy.deepcopy(_DEFAULT_STATE)
 
     def _save_state(self):
+        """Persist current state to disk if this instance has a name (stateless mocks are not saved)."""
         if self._name is None:
             return
         path = self._state_path(self._name)
@@ -144,6 +149,7 @@ class MockRouter(RouterBase):
         return copy.deepcopy(self._state.get("port_vlan_map", {}))
 
     def get_bridge_dhcp_config(self, conn) -> List[tuple]:
+        """Return bridge DHCP entries as (bridge, start, size, lease) tuples, parsing both nvram and bridge state."""
         results = []
         mdhcpd = self._state.get("nvram", {}).get("mdhcpd", "")
         if mdhcpd:
@@ -250,6 +256,7 @@ class MockRouter(RouterBase):
         self._save_state()
 
     def delete_vlan(self, conn, vlan_id: int):
+        """Remove a VLAN entirely: delete its data, strip it from port maps and bridges, and remove its DHCP entry."""
         vlan_key = f"vlan{vlan_id}"
         self._state.get("vlans", {}).pop(vlan_key, None)
         nvram = self._state.get("nvram", {})
@@ -316,6 +323,16 @@ class MockRouter(RouterBase):
         self._save_state()
 
     def set_vlan_members(self, conn, vlan_name: str, members: List[str]):
+        """Set the list of physical ports that are members of a VLAN."""
         if vlan_name in self._state.get("vlans", {}):
             self._state["vlans"][vlan_name]["members"] = list(members)
+        self._save_state()
+
+    def get_firewall_rules(self, conn) -> List[Dict[str, Any]]:
+        """Return the stored VLAN routing restrictions."""
+        return copy.deepcopy(self._state.get("vlan_restrictions", []))
+
+    def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
+        """Store VLAN routing restrictions in mock state."""
+        self._state["vlan_restrictions"] = copy.deepcopy(rules)
         self._save_state()

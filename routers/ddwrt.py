@@ -5,6 +5,8 @@ from .base import RouterBase
 
 
 class DDWRTRouter(RouterBase):
+    """Router handler that communicates with DD-WRT routers via SSH nvram/shell commands."""
+
     def get_dhcp_leases(self, conn) -> List[List[str]]:
         result = conn.run('cat /tmp/dnsmasq.leases', hide=True)
         if result.exited != 0:
@@ -160,6 +162,7 @@ class DDWRTRouter(RouterBase):
             raise Exception(f'remote set {vlan_key}_nat failed')
 
     def set_vlan_dhcp(self, conn, vlan_id: int, start: int, size: int, lease: int):
+        """Enable DHCP on a VLAN by updating the mdhcpd nvram variable to include the VLAN's entry."""
         vlan_key = f"vlan{vlan_id}"
         result = conn.run("nvram get mdhcpd", hide=True)
         if result.exited != 0:
@@ -175,6 +178,7 @@ class DDWRTRouter(RouterBase):
             raise Exception('remote set mdhcpd failed')
 
     def remove_vlan_dhcp(self, conn, vlan_id: int):
+        """Remove a VLAN's DHCP entry from the mdhcpd nvram variable."""
         vlan_key = f"vlan{vlan_id}"
         result = conn.run("nvram get mdhcpd", hide=True)
         if result.exited != 0:
@@ -188,6 +192,7 @@ class DDWRTRouter(RouterBase):
             raise Exception('remote set mdhcpd failed')
 
     def delete_vlan(self, conn, vlan_id: int):
+        """Remove a VLAN entirely by unsetting its nvram keys and stripping it from mdhcpd."""
         vlan_key = f"vlan{vlan_id}"
         for key in [f"{vlan_key}_ipaddr", f"{vlan_key}_netmask",
                      f"{vlan_key}_bridged", f"{vlan_key}_nat"]:
@@ -229,10 +234,98 @@ class DDWRTRouter(RouterBase):
             raise Exception(f'remote set {bridge}_netmask failed')
 
     def add_bridge_member(self, conn, bridge: str, interface: str):
-        raise Exception('add_bridge_member not directly supported via nvram on DD-WRT; use brctl addif')
+        """Not directly supported via nvram on DD-WRT; would require brctl addif at runtime."""
 
     def remove_bridge_member(self, conn, bridge: str, interface: str):
-        raise Exception('remove_bridge_member not directly supported via nvram on DD-WRT; use brctl delif')
+        """Not directly supported via nvram on DD-WRT; would require brctl delif at runtime."""
 
     def set_vlan_members(self, conn, vlan_name: str, members: List[str]):
-        pass
+        """No-op on DD-WRT; port membership is managed via the port VLAN map nvram variables."""
+
+    def get_firewall_rules(self, conn) -> List[Dict[str, Any]]:
+        """Parse VLAN routing restrictions from rc_firewall.
+
+        Collects rules from both the watcher-managed block and any unmanaged
+        iptables FORWARD DROP rules matching the VLAN restriction pattern,
+        so that manually-created firewall rules are also discovered.
+        """
+        result = conn.run("nvram get rc_firewall", hide=True)
+        rules = []
+        seen_keys = set()
+        if result.exited != 0 or not result.stdout.strip():
+            return rules
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line.startswith("iptables") or "-j DROP" not in line:
+                continue
+            if "-I FORWARD" not in line and "-A FORWARD" not in line:
+                continue
+            iface_match = re.search(r"-i\s+(\S+)", line)
+            oface_match = re.search(r"-o\s+(\S+)", line)
+            if not iface_match or not oface_match:
+                continue
+            from_iface = iface_match.group(1)
+            to_iface = oface_match.group(1)
+            if not re.match(r"vlan\d+$", from_iface) or not re.match(r"vlan\d+$", to_iface):
+                continue
+            from_match = re.search(r"vlan(\d+)", from_iface)
+            to_match = re.search(r"vlan(\d+)", to_iface)
+            if not from_match or not to_match:
+                continue
+            key = (from_match.group(1), to_match.group(1))
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            comment_match = re.search(r"-m comment --comment \"([^\"]+)\"", line)
+            rule = {
+                "from": int(key[0]),
+                "to": int(key[1]),
+                "from_iface": from_iface,
+                "to_iface": to_iface,
+            }
+            if comment_match:
+                rule["description"] = comment_match.group(1)
+            rules.append(rule)
+        return rules
+
+    def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
+        """Write watcher-managed firewall rules to rc_firewall.
+
+        Preserves any existing non-watcher, non-VLAN-restriction content.
+        Any VLAN FORWARD DROP rules outside the watcher block are removed
+        (since they are now managed within the watcher block).
+        """
+        result = conn.run("nvram get rc_firewall", hide=True)
+        existing = ""
+        if result.exited == 0 and result.stdout.strip():
+            existing = result.stdout.strip()
+        lines = []
+        in_block = False
+        for line in existing.splitlines():
+            stripped = line.strip()
+            if stripped == "# BEGIN watcher-firewall":
+                in_block = True
+                continue
+            if stripped == "# END watcher-firewall":
+                in_block = False
+                continue
+            if in_block:
+                continue
+            if stripped.startswith("iptables") and "-j DROP" in stripped:
+                if ("-I FORWARD" in stripped or "-A FORWARD" in stripped):
+                    iface_match = re.search(r"-i\s+(vlan\d+)", stripped)
+                    oface_match = re.search(r"-o\s+(vlan\d+)", stripped)
+                    if iface_match and oface_match:
+                        continue
+            lines.append(line)
+        watcher_lines = ["# BEGIN watcher-firewall"]
+        for rule in rules:
+            iptables_cmd = f"iptables -I FORWARD -i {rule['from_iface']} -o {rule['to_iface']} -j DROP"
+            if rule.get("description"):
+                iptables_cmd += f" -m comment --comment \"{rule['description']}\""
+            watcher_lines.append(iptables_cmd)
+        watcher_lines.append("# END watcher-firewall")
+        lines.extend(watcher_lines)
+        new_rc = "\n".join(lines)
+        conn.run(f"nvram set rc_firewall='{new_rc}'", hide=True)
+        conn.run("nvram commit", hide=True)

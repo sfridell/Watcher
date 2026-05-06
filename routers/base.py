@@ -3,6 +3,9 @@ from typing import List, Dict, Any
 
 
 class RouterBase(ABC):
+    """Abstract base class for router handlers. Defines the read/write interface for querying
+    and modifying router configuration via SSH (DD-WRT) or in-memory state (MockRouter)."""
+
     @abstractmethod
     def get_dhcp_leases(self, conn) -> List[List[str]]:
         pass
@@ -49,48 +52,70 @@ class RouterBase(ABC):
 
     @abstractmethod
     def set_vlan_ip(self, conn, vlan_id: int, ip: str, netmask: str):
+        """Set the IP address and netmask on a VLAN interface."""
         pass
 
     @abstractmethod
     def set_vlan_bridged(self, conn, vlan_id: int, bridged: bool):
+        """Set whether a VLAN is bridged."""
         pass
 
     @abstractmethod
     def set_vlan_nat(self, conn, vlan_id: int, nat: bool):
+        """Enable or disable NAT on a VLAN."""
         pass
 
     @abstractmethod
     def set_vlan_dhcp(self, conn, vlan_id: int, start: int, size: int, lease: int):
+        """Configure DHCP for a VLAN with the given range start, pool size, and lease time (minutes)."""
         pass
 
     @abstractmethod
     def remove_vlan_dhcp(self, conn, vlan_id: int):
+        """Remove DHCP configuration from a VLAN."""
         pass
 
     @abstractmethod
     def delete_vlan(self, conn, vlan_id: int):
+        """Fully remove a VLAN and all its associated configuration."""
         pass
 
     @abstractmethod
     def set_port_vlan_map(self, conn, port_map: Dict[str, List[int]]):
+        """Write the complete port-to-VLAN membership mapping."""
         pass
 
     @abstractmethod
     def set_bridge_dhcp(self, conn, bridge: str, start: int, size: int, lease: int):
+        """Configure DHCP on a bridge with the given range start, pool size, and lease time (minutes)."""
         pass
 
     @abstractmethod
     def set_bridge_ip(self, conn, bridge: str, ip: str, netmask: str):
+        """Set the IP address and netmask on a bridge interface."""
         pass
 
     @abstractmethod
     def add_bridge_member(self, conn, bridge: str, interface: str):
+        """Add an interface as a member of a bridge."""
         pass
 
     @abstractmethod
     def remove_bridge_member(self, conn, bridge: str, interface: str):
+        """Remove an interface from a bridge."""
         pass
 
     @abstractmethod
     def set_vlan_members(self, conn, vlan_name: str, members: List[str]):
+        """Set the list of physical ports that are members of a VLAN."""
+        pass
+
+    @abstractmethod
+    def get_firewall_rules(self, conn) -> List[Dict[str, Any]]:
+        """Return the current VLAN routing restrictions as a list of dicts with from_iface/to_iface/description."""
+        pass
+
+    @abstractmethod
+    def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
+        """Apply VLAN routing restriction rules to the router's firewall configuration."""
         pass

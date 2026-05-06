@@ -425,5 +425,204 @@ class TestConfigDiff(unittest.TestCase):
         self.assertFalse(d.is_empty())
 
 
+class TestNetworkConfigRestrictions(unittest.TestCase):
+    def test_add_restriction(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2, description="block guest to LAN")
+        restrictions = config.network["vlan_restrictions"]
+        self.assertEqual(len(restrictions), 1)
+        self.assertEqual(restrictions[0]["from"], 1)
+        self.assertEqual(restrictions[0]["to"], 2)
+        self.assertEqual(restrictions[0]["description"], "block guest to LAN")
+
+    def test_add_restriction_bidirectional(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2, bidirectional=True)
+        restrictions = config.network["vlan_restrictions"]
+        self.assertEqual(len(restrictions), 2)
+        directions = {(r["from"], r["to"]) for r in restrictions}
+        self.assertIn((1, 2), directions)
+        self.assertIn((2, 1), directions)
+
+    def test_add_restriction_self_raises(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        with self.assertRaises(ValueError):
+            config.add_restriction(1, 1)
+
+    def test_add_restriction_duplicate_raises(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2)
+        with self.assertRaises(ValueError):
+            config.add_restriction(1, 2)
+
+    def test_remove_restriction(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2)
+        config.remove_restriction(1, 2)
+        self.assertEqual(len(config.network["vlan_restrictions"]), 0)
+
+    def test_remove_restriction_bidirectional(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2, bidirectional=True)
+        self.assertEqual(len(config.network["vlan_restrictions"]), 2)
+        config.remove_restriction(1, 2, bidirectional=True)
+        self.assertEqual(len(config.network["vlan_restrictions"]), 0)
+
+    def test_validate_restriction_nonexistent_vlan(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.network["vlan_restrictions"] = [{"from": 1, "to": 99}]
+        errors = config.validate()
+        self.assertGreater(len(errors), 0)
+        self.assertTrue(any("non-existent" in e for e in errors))
+
+    def test_validate_restriction_self(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.network["vlan_restrictions"] = [{"from": 1, "to": 1}]
+        errors = config.validate()
+        self.assertGreater(len(errors), 0)
+        self.assertTrue(any("itself" in e for e in errors))
+
+    def test_validate_restriction_same_bridge_warning(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.network["bridges"]["br0"] = {"members": ["vlan1", "vlan2"]}
+        config.add_restriction(1, 2)
+        errors = config.validate()
+        self.assertGreater(len(errors), 0)
+        self.assertTrue(any("same-bridge" in e for e in errors))
+
+    def test_validate_restriction_different_bridges_ok(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1, bridged=True)
+        config.add_vlan(2, bridged=True)
+        config.add_restriction(1, 2)
+        errors = config.validate()
+        bridge_errors = [e for e in errors if "bridge" in e.lower() and "same-bridge" in e]
+        self.assertEqual(len(bridge_errors), 0)
+
+    def test_validate_restriction_duplicate(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.network["vlan_restrictions"] = [
+            {"from": 1, "to": 2},
+            {"from": 1, "to": 2},
+        ]
+        errors = config.validate()
+        self.assertGreater(len(errors), 0)
+        self.assertTrue(any("Duplicate" in e for e in errors))
+
+    def test_diff_restrictions(self):
+        config1 = NetworkConfig.from_scratch()
+        config2 = NetworkConfig.from_scratch()
+        config2.add_vlan(1)
+        config2.add_vlan(2)
+        config2.add_restriction(1, 2, description="test")
+        d = config1.diff(config2)
+        self.assertEqual(len(d.added_restrictions), 1)
+        self.assertEqual(d.added_restrictions[0]["from"], 1)
+
+    def test_diff_restriction_removed(self):
+        config1 = NetworkConfig.from_scratch()
+        config1.add_vlan(1)
+        config1.add_vlan(2)
+        config1.add_restriction(1, 2)
+        config2 = NetworkConfig.from_scratch()
+        config2.add_vlan(1)
+        config2.add_vlan(2)
+        d = config1.diff(config2)
+        self.assertEqual(len(d.removed_restrictions), 1)
+
+    def test_expand_restrictions(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2, description="test", bidirectional=True)
+        rules = config._expand_restrictions()
+        self.assertEqual(len(rules), 2)
+        self.assertEqual(rules[0]["from_iface"], "vlan1")
+        self.assertEqual(rules[0]["to_iface"], "vlan2")
+        self.assertEqual(rules[1]["from_iface"], "vlan2")
+        self.assertEqual(rules[1]["to_iface"], "vlan1")
+
+    def test_add_vlan_bridged_creates_bridge(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(10, ip="10.0.0.1", netmask="255.255.255.0", bridged=True)
+        self.assertIn("br10", config.network["bridges"])
+        self.assertIn("vlan10", config.network["bridges"]["br10"]["members"])
+
+    def test_restriction_round_trip_json(self):
+        config = NetworkConfig.from_scratch()
+        config.add_vlan(1)
+        config.add_vlan(2)
+        config.add_restriction(1, 2, description="block")
+        json_str = config.to_json()
+        config2 = NetworkConfig.from_dict(json.loads(json_str))
+        self.assertEqual(len(config2.network["vlan_restrictions"]), 1)
+        self.assertEqual(config2.network["vlan_restrictions"][0]["description"], "block")
+
+
+class TestMockRouterFirewall(unittest.TestCase):
+    def setUp(self):
+        self.router = MockRouter()
+        self.conn = None
+
+    def test_get_firewall_rules_default(self):
+        rules = self.router.get_firewall_rules(self.conn)
+        self.assertIsInstance(rules, list)
+
+    def test_set_firewall_rules(self):
+        rules = [
+            {"from_iface": "vlan3", "to_iface": "vlan1", "description": "guest to LAN"},
+        ]
+        self.router.set_firewall_rules(self.conn, rules)
+        result = self.router.get_firewall_rules(self.conn)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["from_iface"], "vlan3")
+
+    def test_set_firewall_rules_overwrite(self):
+        self.router.set_firewall_rules(self.conn, [{"from_iface": "vlan1", "to_iface": "vlan2"}])
+        self.router.set_firewall_rules(self.conn, [{"from_iface": "vlan3", "to_iface": "vlan1"}])
+        result = self.router.get_firewall_rules(self.conn)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["from_iface"], "vlan3")
+
+
+class TestNetworkConfigFromRouterRestrictions(unittest.TestCase):
+    def setUp(self):
+        self.router = MockRouter()
+        self.conn = None
+
+    def test_from_router_discovers_restrictions(self):
+        self.router.set_firewall_rules(self.conn, [
+            {"from_iface": "vlan3", "to_iface": "vlan1", "from": 3, "to": 1, "description": "guest to LAN"},
+            {"from_iface": "vlan1", "to_iface": "vlan3", "from": 1, "to": 3, "description": "LAN to guest"},
+        ])
+        config = NetworkConfig.from_router(self.conn, self.router)
+        restrictions = config.network.get("vlan_restrictions", [])
+        self.assertEqual(len(restrictions), 2)
+        self.assertEqual(restrictions[0]["from"], 3)
+        self.assertEqual(restrictions[0]["to"], 1)
+
+    def test_from_router_empty_restrictions(self):
+        config = NetworkConfig.from_router(self.conn, self.router)
+        restrictions = config.network.get("vlan_restrictions", [])
+        self.assertEqual(len(restrictions), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

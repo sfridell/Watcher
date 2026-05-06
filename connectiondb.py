@@ -8,10 +8,14 @@ from routers import get_router_handler
 
 
 class _MockConnection:
+    """Placeholder connection object for MockRouter. Carries no state since the mock handler manages its own."""
+
     pass
 
 
 class ConnectionDB:
+    """Manages saved router connection profiles and creates live connections (Fabric SSH or mock)."""
+
     def __init__(self):
         if os.path.exists('./connections.json'):
             with open('./connections.json', 'r') as file:
@@ -45,6 +49,7 @@ class ConnectionDB:
             json.dump(self.connections, f)
 
     def get_connection(self, name, output):
+        """Create a Fabric SSH connection (or _MockConnection for mock routers) for the named profile."""
         if name not in self.connections:
             print(f'ERROR: connection to {name} does not exist', file=output)
             return
@@ -59,6 +64,7 @@ class ConnectionDB:
         return c
 
     def get_connection_with_handler(self, name, output):
+        """Return a (connection, router_handler) pair for the named profile. Uses _MockConnection for mock routers."""
         if name not in self.connections:
             print(f'ERROR: connection to {name} does not exist', file=output)
             return None, None
@@ -75,6 +81,7 @@ class ConnectionDB:
         return c, handler
 
     def new_connection(self, args, output):
+        """Create a new connection profile. Generates an RSA key pair for real routers; skips for mock type."""
         if args.name in self.connections:
             print(f'ERROR: connection to {args.name} already exists', file=output)
             return

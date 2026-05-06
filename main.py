@@ -189,6 +189,8 @@ class ConfigScreen(Screen):
 
 
 class VlanListScreen(Screen):
+    """Displays all VLANs for the selected connection in a scrollable table."""
+
     connection_name = StringProperty('')
 
     def set_connection(self, conn_name):
@@ -226,6 +228,10 @@ class VlanListScreen(Screen):
         self.manager.get_screen('vlan_edit').new_vlan()
         self.manager.current = 'vlan_edit'
 
+    def show_restrictions(self):
+        self.manager.get_screen('vlan_restrictions').set_connection(self.connection_name)
+        self.manager.current = 'vlan_restrictions'
+
     def go_back(self):
         self.manager.current = 'menu'
 
@@ -237,6 +243,8 @@ class VlanListScreen(Screen):
 
 
 class VlanEditScreen(Screen):
+    """Form for adding or editing a single VLAN's properties (ID, IP, netmask, bridged, NAT, DHCP)."""
+
     connection_name = StringProperty('')
     _editing_vlan = None
 
@@ -304,6 +312,12 @@ class VlanEditScreen(Screen):
 
 
 class ConfigActionsScreen(Screen):
+    """Provides actions for snapshot/load/save/validate/diff/apply/verify of network configs.
+
+    Holds a file path input for JSON config files and an apply-mode spinner (diff or full).
+    Delegates to watcher CLI commands and displays results in an editable text area.
+    """
+
     connection_name = StringProperty('')
 
     def set_connection(self, conn_name):
@@ -442,7 +456,92 @@ class ConfigActionsScreen(Screen):
         popup.open()
 
 
+class VlanRestrictionsScreen(Screen):
+    """Displays VLAN routing restrictions and allows adding/removing them."""
+
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.title_label.text = f'VLAN Restrictions - {conn_name}'
+
+    def on_enter(self):
+        self.load_data()
+
+    def load_data(self):
+        try:
+            self.ids.data_layout.clear_widgets()
+            app = App.get_running_app()
+            config = getattr(app, 'network_config', None)
+            if config is None:
+                output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
+                data = output.getvalue()
+                config = NetworkConfig.from_dict(json.loads(data))
+                app.network_config = config
+            restrictions = config.network.get("vlan_restrictions", [])
+            if not restrictions:
+                self.ids.data_layout.add_widget(Label(text="No restrictions configured", font_size='14sp'))
+            for r in restrictions:
+                bidi = " <-> " if r.get("bidirectional") else " -> "
+                desc = f" ({r.get('description', '')})" if r.get("description") else ""
+                text = f"vlan{r['from']}{bidi}vlan{r['to']}{desc}"
+                self.ids.data_layout.add_widget(Label(text=text, size_hint_y=None, height=dp(30), font_size='12sp'))
+        except Exception as e:
+            self.show_error(f"Failed to load restrictions: {str(e)}")
+
+    def add_restriction(self):
+        self.manager.get_screen('restriction_add').set_connection(self.connection_name)
+        self.manager.current = 'restriction_add'
+
+    def go_back(self):
+        self.manager.current = 'vlan_list'
+
+    def show_error(self, message):
+        popup = Popup(title='Error',
+                      content=Label(text=message),
+                      size_hint=(0.8, 0.3))
+        popup.open()
+
+
+class RestrictionAddScreen(Screen):
+    """Form for adding a VLAN routing restriction."""
+
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.title_label.text = f'Add Restriction - {conn_name}'
+
+    def save_restriction(self):
+        try:
+            app = App.get_running_app()
+            config = getattr(app, 'network_config', None)
+            if config is None:
+                self.show_error("No config loaded. Snapshot or load first.")
+                return
+            from_id = int(self.ids.from_vlan.text)
+            to_id = int(self.ids.to_vlan.text)
+            description = self.ids.desc.text
+            bidirectional = self.ids.bidi.active
+            config.add_restriction(from_id=from_id, to_id=to_id,
+                                   description=description, bidirectional=bidirectional)
+            self.manager.current = 'vlan_restrictions'
+        except Exception as e:
+            self.show_error(f"Failed to add restriction: {str(e)}")
+
+    def go_back(self):
+        self.manager.current = 'vlan_restrictions'
+
+    def show_error(self, message):
+        popup = Popup(title='Error',
+                      content=Label(text=message),
+                      size_hint=(0.8, 0.3))
+        popup.open()
+
+
 class WatcherApp(App):
+    """Kivy application entry point. Holds a shared NetworkConfig instance for inter-screen state."""
+
     network_config = None
 
     def build(self):
@@ -454,6 +553,8 @@ class WatcherApp(App):
         sm.add_widget(ConfigScreen(name='config'))
         sm.add_widget(VlanListScreen(name='vlan_list'))
         sm.add_widget(VlanEditScreen(name='vlan_edit'))
+        sm.add_widget(VlanRestrictionsScreen(name='vlan_restrictions'))
+        sm.add_widget(RestrictionAddScreen(name='restriction_add'))
         sm.add_widget(ConfigActionsScreen(name='config_actions'))
         return sm
 

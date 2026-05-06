@@ -11,6 +11,7 @@ ROUTER_HANDLERS: Dict[str, Type[RouterBase]] = {
 
 
 def get_router_handler(router_type: str, name: Optional[str] = None) -> RouterBase:
+    """Return a router handler instance for the given type. For 'mock' type, pass a name to enable state persistence."""
     handler_class = ROUTER_HANDLERS.get(router_type)
     if handler_class is None:
         handler_class = DDWRTRouter

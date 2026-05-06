@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 
 
 class ConfigDiff:
+    """Represents the differences between two NetworkConfig instances."""
+
     def __init__(self):
         self.added_vlans: List[Dict[str, Any]] = []
         self.removed_vlans: List[str] = []
@@ -19,6 +21,8 @@ class ConfigDiff:
         self.modified_bridge_dhcp: List[Dict[str, Any]] = []
         self.added_bridge_ip: List[Dict[str, Any]] = []
         self.removed_bridge_ip: List[str] = []
+        self.added_restrictions: List[Dict[str, Any]] = []
+        self.removed_restrictions: List[Dict[str, Any]] = []
 
     def is_empty(self) -> bool:
         return (
@@ -34,6 +38,8 @@ class ConfigDiff:
             and not self.modified_bridge_dhcp
             and not self.added_bridge_ip
             and not self.removed_bridge_ip
+            and not self.added_restrictions
+            and not self.removed_restrictions
         )
 
     def __str__(self):
@@ -70,10 +76,21 @@ class ConfigDiff:
                 lines.append(f"  Set {d['bridge']} IP: {d['ip']}/{d['netmask']}")
         if self.removed_bridge_ip:
             lines.append(f"  Removed IP on: {self.removed_bridge_ip}")
+        if self.added_restrictions:
+            for r in self.added_restrictions:
+                desc = f" ({r['description']})" if r.get("description") else ""
+                bidi = " <-> " if r.get("bidirectional") else " -> "
+                lines.append(f"  Add restriction: vlan{r['from']}{bidi}vlan{r['to']}{desc}")
+        if self.removed_restrictions:
+            for r in self.removed_restrictions:
+                desc = f" ({r['description']})" if r.get("description") else ""
+                bidi = " <-> " if r.get("bidirectional") else " -> "
+                lines.append(f"  Remove restriction: vlan{r['from']}{bidi}vlan{r['to']}{desc}")
         return "\n".join(lines) if lines else "  (no changes)"
 
 
 def _ip_network(ip_str, netmask_str):
+    """Convert an IP address and netmask to an IPv4Network, or return None on failure."""
     try:
         prefix = ipaddress.IPv4Network(f"0.0.0.0/{netmask_str}").prefixlen
         return ipaddress.IPv4Network(f"{ip_str}/{prefix}", strict=False)
@@ -82,17 +99,25 @@ def _ip_network(ip_str, netmask_str):
 
 
 class NetworkConfig:
+    """Editable network configuration specification for a router.
+
+    Supports construction from a live router, JSON files, or from scratch.
+    Provides mutation methods, validation, diffing, and application to a router.
+    """
+
     def __init__(self):
         self.network: Dict[str, Any] = {
             "interfaces": {},
             "vlans": {},
             "bridges": {},
             "ports": {},
+            "vlan_restrictions": [],
         }
         self.dhcp: Dict[str, Any] = {"static_leases": []}
 
     @classmethod
     def from_router(cls, conn, router) -> "NetworkConfig":
+        """Query a live router and build a config from its current state."""
         config = cls()
         config.network["interfaces"] = router.get_interfaces(conn)
         config.network["bridges"] = router.get_bridges(conn)
@@ -123,10 +148,26 @@ class NetworkConfig:
                         members.append(port)
                 config.network["vlans"][vlan_name]["members"] = members
         config.dhcp["static_leases"] = router.get_static_leases(conn)
+        raw_rules = router.get_firewall_rules(conn)
+        restrictions = []
+        seen = set()
+        for rule in raw_rules:
+            from_id = rule.get("from")
+            to_id = rule.get("to")
+            if from_id is not None and to_id is not None:
+                key = (from_id, to_id)
+                if key not in seen:
+                    seen.add(key)
+                    r = {"from": from_id, "to": to_id}
+                    if rule.get("description"):
+                        r["description"] = rule["description"]
+                    restrictions.append(r)
+        config.network["vlan_restrictions"] = restrictions
         return config
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "NetworkConfig":
+        """Build a NetworkConfig from a raw dictionary (e.g. parsed JSON)."""
         config = cls()
         if "network" in data:
             config.network.update(data["network"])
@@ -137,6 +178,7 @@ class NetworkConfig:
 
     @classmethod
     def from_json_file(cls, path: str) -> "NetworkConfig":
+        """Load a NetworkConfig from a JSON file on disk."""
         with open(path, "r") as f:
             data = json.load(f)
         config = cls.from_dict(data)
@@ -147,10 +189,12 @@ class NetworkConfig:
         return cls()
 
     def _normalize(self):
+        """Ensure all expected top-level keys exist and sub-dicts have default values."""
         self.network.setdefault("interfaces", {})
         self.network.setdefault("vlans", {})
         self.network.setdefault("bridges", {})
         self.network.setdefault("ports", {})
+        self.network.setdefault("vlan_restrictions", [])
         self.dhcp.setdefault("static_leases", [])
         for vlan_name in self.network["vlans"]:
             self.network["vlans"][vlan_name].setdefault("members", [])
@@ -170,6 +214,10 @@ class NetworkConfig:
             f.write(self.to_json())
 
     def validate(self) -> List[str]:
+        """Check the config for errors like overlapping subnets, duplicate IDs, and dangling references.
+
+        Returns a list of error strings; empty list means valid.
+        """
         errors = []
         seen_ids = {}
         for vlan_name, vlan_data in self.network.get("vlans", {}).items():
@@ -256,9 +304,48 @@ class NetworkConfig:
                             errors.append(f"VLAN {vlan_name}: DHCP range_start {start} out of subnet range")
                         if start + size > num_hosts:
                             errors.append(f"VLAN {vlan_name}: DHCP range exceeds subnet")
+        for r in self.network.get("vlan_restrictions", []):
+            from_id = r.get("from")
+            to_id = r.get("to")
+            if from_id == to_id:
+                errors.append(f"VLAN restriction from VLAN {from_id} to itself is not valid")
+            from_name = f"vlan{from_id}"
+            to_name = f"vlan{to_id}"
+            if from_name not in self.network.get("vlans", {}):
+                errors.append(f"VLAN restriction references non-existent source VLAN {from_id}")
+            if to_name not in self.network.get("vlans", {}):
+                errors.append(f"VLAN restriction references non-existent destination VLAN {to_id}")
+            from_bridge = None
+            to_bridge = None
+            for bridge_name, bridge_data in self.network.get("bridges", {}).items():
+                if from_name in bridge_data.get("members", []):
+                    from_bridge = bridge_name
+                if to_name in bridge_data.get("members", []):
+                    to_bridge = bridge_name
+            if from_bridge and to_bridge and from_bridge == to_bridge:
+                errors.append(f"VLAN restriction from {from_id} to {to_id}: both VLANs are on bridge {from_bridge}; "
+                              f"iptables will not filter same-bridge traffic without bridge-nf-call-iptables")
+        seen_restriction_keys = set()
+        for r in self.network.get("vlan_restrictions", []):
+            key = (r.get("from"), r.get("to"))
+            if key in seen_restriction_keys:
+                errors.append(f"Duplicate VLAN restriction from VLAN {key[0]} to VLAN {key[1]}")
+            seen_restriction_keys.add(key)
+            if r.get("bidirectional"):
+                reverse_key = (key[1], key[0])
+                if reverse_key in seen_restriction_keys:
+                    for r2 in self.network.get("vlan_restrictions", []):
+                        if (r2.get("from"), r2.get("to")) == reverse_key:
+                            if not r2.get("bidirectional"):
+                                errors.append(f"Redundant: bidirectional restriction from {key[0]} to {key[1]} "
+                                             f"overlaps with explicit reverse from {reverse_key[0]} to {reverse_key[1]}")
         return errors
 
     def diff(self, other: "NetworkConfig") -> ConfigDiff:
+        """Compute the differences between self (old/current) and other (new/desired).
+
+        Returns a ConfigDiff listing what was added, removed, or modified.
+        """
         d = ConfigDiff()
         my_vlans = self.network.get("vlans", {})
         other_vlans = other.network.get("vlans", {})
@@ -333,6 +420,14 @@ class NetworkConfig:
                 d.removed_bridge_ip.append(bridge)
             elif my_ip and other_ip and (my_ip != other_ip or my_b.get("netmask") != other_nm):
                 d.added_bridge_ip.append({"bridge": bridge, "ip": other_ip, "netmask": other_nm})
+        my_restrictions = {(r["from"], r["to"]): r for r in self.network.get("vlan_restrictions", [])}
+        other_restrictions = {(r["from"], r["to"]): r for r in other.network.get("vlan_restrictions", [])}
+        for key, r in other_restrictions.items():
+            if key not in my_restrictions:
+                d.added_restrictions.append(copy.deepcopy(r))
+        for key, r in my_restrictions.items():
+            if key not in other_restrictions:
+                d.removed_restrictions.append(copy.deepcopy(r))
         return d
 
     def add_vlan(self, vlan_id: int, ip: str = "0.0.0.0",
@@ -340,6 +435,11 @@ class NetworkConfig:
                  nat: bool = False, dhcp_enabled: bool = False,
                  dhcp_start: int = 0, dhcp_size: int = 0,
                  dhcp_lease: int = 0):
+        """Add a new VLAN to the config. Raises ValueError if the VLAN ID already exists.
+
+        When bridged is True, automatically creates a dedicated bridge (br<vlan_id>)
+        with this VLAN as its sole member, avoiding same-bridge filtering issues.
+        """
         vlan_name = f"vlan{vlan_id}"
         if vlan_name in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} already exists")
@@ -358,9 +458,19 @@ class NetworkConfig:
                 "lease_time_min": dhcp_lease,
             }
         self.network.setdefault("vlans", {})[vlan_name] = vlan_data
+        if bridged:
+            bridge_name = f"br{vlan_id}"
+            bridges = self.network.setdefault("bridges", {})
+            if bridge_name not in bridges:
+                bridges[bridge_name] = {"members": [vlan_name]}
+            else:
+                members = bridges[bridge_name].setdefault("members", [])
+                if vlan_name not in members:
+                    members.append(vlan_name)
         return vlan_name
 
     def remove_vlan(self, vlan_id: int):
+        """Remove a VLAN and clean up port/bridge references to it. Raises ValueError if not found."""
         vlan_name = f"vlan{vlan_id}"
         if vlan_name not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} does not exist")
@@ -373,6 +483,7 @@ class NetworkConfig:
                 members.remove(vlan_name)
 
     def update_vlan(self, vlan_id: int, **kwargs):
+        """Update properties of an existing VLAN. Accepts ip, netmask, bridged, nat, dhcp_enabled, dhcp_start/size/lease."""
         vlan_name = f"vlan{vlan_id}"
         if vlan_name not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} does not exist")
@@ -392,6 +503,7 @@ class NetworkConfig:
                 vlan_data.pop("dhcp", None)
 
     def assign_port(self, port: str, vlan_id: int):
+        """Add a port to a VLAN's member list and update the port-to-VLAN mapping. Raises ValueError if VLAN doesn't exist."""
         if f"vlan{vlan_id}" not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_id} does not exist")
         ports = self.network.setdefault("ports", {})
@@ -417,6 +529,7 @@ class NetworkConfig:
                 members.remove(port)
 
     def add_bridge_vlan(self, bridge: str, vlan_name: str):
+        """Add a VLAN interface as a member of a bridge. Creates the bridge if it doesn't exist. Raises ValueError if VLAN doesn't exist."""
         if vlan_name not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} does not exist")
         bridges = self.network.setdefault("bridges", {})
@@ -466,7 +579,44 @@ class NetworkConfig:
         if bridge in bridges:
             bridges[bridge].pop("dhcp", None)
 
+    @staticmethod
+    def _restriction_key(r):
+        return (r["from"], r["to"])
+
+    def add_restriction(self, from_id: int, to_id: int,
+                        description: str = "", bidirectional: bool = False):
+        """Add a VLAN routing restriction. Raises ValueError if from == to or duplicate."""
+        if from_id == to_id:
+            raise ValueError(f"Cannot create a restriction from VLAN {from_id} to itself")
+        restrictions = self.network.setdefault("vlan_restrictions", [])
+        new_entry = {"from": from_id, "to": to_id, "bidirectional": bidirectional}
+        if description:
+            new_entry["description"] = description
+        for r in restrictions:
+            if self._restriction_key(r) == (from_id, to_id):
+                raise ValueError(f"Restriction from VLAN {from_id} to VLAN {to_id} already exists")
+        restrictions.append(new_entry)
+        if bidirectional:
+            reverse = {"from": to_id, "to": from_id, "bidirectional": True}
+            if description:
+                reverse["description"] = f"{description} (reverse)"
+            for r in restrictions:
+                if self._restriction_key(r) == (to_id, from_id):
+                    raise ValueError(f"Reverse restriction from VLAN {to_id} to VLAN {from_id} already exists")
+            restrictions.append(reverse)
+
+    def remove_restriction(self, from_id: int, to_id: int, bidirectional: bool = False):
+        """Remove a VLAN routing restriction. If bidirectional, removes the reverse too."""
+        restrictions = self.network.get("vlan_restrictions", [])
+        target = (from_id, to_id)
+        self.network["vlan_restrictions"] = [r for r in restrictions if self._restriction_key(r) != target]
+        if bidirectional:
+            reverse = (to_id, from_id)
+            self.network["vlan_restrictions"] = [r for r in self.network["vlan_restrictions"] if self._restriction_key(r) != reverse]
+
     def apply_to_router(self, conn, router, mode="diff"):
+        """Push this config to a router. In 'diff' mode, only changed settings are applied.
+        In 'full' mode, all settings are written regardless of current state."""
         if mode not in ("diff", "full"):
             raise ValueError(f"Invalid apply mode: {mode}. Must be 'diff' or 'full'.")
         if mode == "full":
@@ -477,6 +627,7 @@ class NetworkConfig:
             self._apply_diff(conn, router, d)
 
     def _apply_full(self, conn, router):
+        """Write the entire config to the router, overwriting all relevant settings."""
         for vlan_name, vlan_data in self.network.get("vlans", {}).items():
             match = re.search(r"\d+", vlan_name)
             if not match:
@@ -511,10 +662,13 @@ class NetworkConfig:
         for vlan_name, vlan_data in self.network.get("vlans", {}).items():
             members = vlan_data.get("members", [])
             router.set_vlan_members(conn, vlan_name, members)
+        restrictions = self._expand_restrictions()
+        router.set_firewall_rules(conn, restrictions)
         router.commit_config(conn)
         router.restart_dhcp_service(conn)
 
     def _apply_diff(self, conn, router, d: ConfigDiff):
+        """Apply only the changes described in a ConfigDiff to the router."""
         for vlan_info in d.added_vlans:
             vlan_name = vlan_info["name"]
             match = re.search(r"\d+", vlan_name)
@@ -615,10 +769,35 @@ class NetworkConfig:
             router.set_bridge_ip(conn, ip_info["bridge"], ip_info["ip"], ip_info["netmask"])
         for bridge_name in d.removed_bridge_ip:
             pass
+        if d.added_restrictions or d.removed_restrictions:
+            current_restrictions = self._expand_restrictions()
+            router.set_firewall_rules(conn, current_restrictions)
         router.commit_config(conn)
         router.restart_dhcp_service(conn)
 
+    def _expand_restrictions(self):
+        """Convert vlan_restrictions into firewall rule dicts.
+
+        Each entry is converted to a rule with from_iface/to_iface.
+        The bidirectional flag was already expanded into separate entries
+        by add_restriction, so no further expansion is needed here.
+        """
+        rules = []
+        for r in self.network.get("vlan_restrictions", []):
+            from_id = r["from"]
+            to_id = r["to"]
+            desc = r.get("description", "")
+            rule = {"from_iface": f"vlan{from_id}", "to_iface": f"vlan{to_id}"}
+            if desc:
+                rule["description"] = desc
+            rules.append(rule)
+        return rules
+
     def verify(self, conn, router) -> List[str]:
+        """Re-read the router's current config and compare against this spec.
+
+        Returns a list of issue strings; empty list means the router matches.
+        """
         current = NetworkConfig.from_router(conn, router)
         d = current.diff(self)
         issues = []
