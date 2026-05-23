@@ -33,6 +33,18 @@ class DDWRTRouter(RouterBase):
         if result.exited != 0:
             raise Exception('remote set command failed')
 
+    def remove_dhcp_leases(self, conn, mac_addresses: List[str]):
+        result = conn.run('cat /tmp/dnsmasq.leases', hide=True)
+        if result.exited != 0:
+            raise Exception('remote cat dnsmasq.leases failed')
+        lines = result.stdout.splitlines()
+        filtered = [line for line in lines if len(line.split()) < 2 or line.split()[1] not in mac_addresses]
+        lease_content = '\n'.join(filtered) + '\n'
+        conn.run(f"echo '{lease_content}' > /tmp/dnsmasq.leases", hide=True)
+        result = conn.run('service dnsmasq restart', hide=True)
+        if result.exited != 0:
+            raise Exception('remote dnsmasq restart command failed')
+
     def restart_dhcp_service(self, conn):
         result = conn.run('service dnsmasq restart', hide=True)
         if result.exited != 0:

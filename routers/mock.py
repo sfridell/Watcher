@@ -127,6 +127,13 @@ class MockRouter(RouterBase):
         self._state["nvram"]["static_leases"] = " ".join(parts)
         self._save_state()
 
+    def remove_dhcp_leases(self, conn, mac_addresses: List[str]):
+        self._state["dhcp_leases"] = [
+            lease for lease in self._state.get("dhcp_leases", [])
+            if lease[1] not in mac_addresses
+        ]
+        self._save_state()
+
     def restart_dhcp_service(self, conn):
         self._save_state()
 

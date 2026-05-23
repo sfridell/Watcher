@@ -6,13 +6,13 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             text: 'Watcher -- Connections'
             size_hint_y: 0.1
             font_size: '20sp'
             bold: True
-        
+
         ScrollView:
             BoxLayout:
                 id: button_layout
@@ -21,49 +21,225 @@
                 spacing: dp(5)
                 height: self.minimum_height
 
+        Button:
+            text: 'New Connection'
+            size_hint_y: 0.1
+            font_size: '16sp'
+            on_press: root.new_connection()
+
+<NewConnectionScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            text: 'New Connection'
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+
+        BoxLayout:
+            size_hint_y: 0.07
+            spacing: dp(5)
+
+            Label:
+                text: 'Name:'
+                size_hint_x: 0.3
+                font_size: '14sp'
+
+            TextInput:
+                id: conn_name
+                size_hint_x: 0.7
+                font_size: '14sp'
+                text: ''
+
+        BoxLayout:
+            size_hint_y: 0.07
+            spacing: dp(5)
+
+            Label:
+                text: 'Router Type:'
+                size_hint_x: 0.3
+                font_size: '14sp'
+
+            Spinner:
+                id: router_type
+                text: 'ddwrt'
+                values: ['ddwrt', 'ddwrt_v3_netgear_r7000', 'mock']
+                size_hint_x: 0.7
+                font_size: '14sp'
+                on_text: root.on_router_type_change(self, args[1])
+
+        BoxLayout:
+            size_hint_y: 0.07
+            spacing: dp(5)
+
+            Label:
+                text: 'IP Address:'
+                size_hint_x: 0.3
+                font_size: '14sp'
+
+            TextInput:
+                id: conn_ip
+                size_hint_x: 0.7
+                font_size: '14sp'
+                text: ''
+
+        BoxLayout:
+            size_hint_y: 0.07
+            spacing: dp(5)
+
+            Label:
+                text: 'Port:'
+                size_hint_x: 0.3
+                font_size: '14sp'
+
+            TextInput:
+                id: conn_port
+                size_hint_x: 0.7
+                font_size: '14sp'
+                text: '22'
+                input_filter: 'int'
+
+        BoxLayout:
+            size_hint_y: 0.07
+            spacing: dp(5)
+
+            Label:
+                text: 'Username:'
+                size_hint_x: 0.3
+                font_size: '14sp'
+
+            TextInput:
+                id: conn_username
+                size_hint_x: 0.7
+                font_size: '14sp'
+                text: ''
+
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+
+            Button:
+                text: 'Save'
+                font_size: '16sp'
+                on_press: root.save_connection()
+
+            Button:
+                text: 'Cancel'
+                font_size: '16sp'
+                on_press: root.go_back()
+
 <ConnectionMenuScreen>:
     BoxLayout:
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
+        BoxLayout:
+            size_hint_y: 0.12
+            spacing: dp(10)
+
+            Label:
+                id: title_label
+                text: ''
+                size_hint_x: 0.5
+                font_size: '18sp'
+                bold: True
+
+            Button:
+                text: '\u25C9 Status'
+                size_hint_x: 0.25
+                font_size: '16sp'
+                on_press: root.show_status()
+
+            Button:
+                text: '\u2699 Configure'
+                size_hint_x: 0.25
+                font_size: '16sp'
+                on_press: root.show_configure()
+
+        Label:
+            id: info_label
+            text: 'Select View or Configure to manage this connection'
+            size_hint_y: 0.08
+            font_size: '12sp'
+            color: (0.6, 0.6, 0.6, 1)
+
+        Button:
+            text: 'Back'
+            size_hint_y: 0.1
+            font_size: '16sp'
+            on_press: root.go_back()
+
+<StatusScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
         Label:
             id: title_label
             text: ''
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
-        BoxLayout:
-            orientation: 'vertical'
-            spacing: dp(10)
-            size_hint_y: 0.82
-            
-            Button:
-                text: 'View DHCP Clients'
-                font_size: '18sp'
-                on_press: root.show_clients()
-            
-            Button:
-                text: 'View Static Leases'
-                font_size: '18sp'
-                on_press: root.show_leases()
-            
-            Button:
-                text: 'View Config'
-                font_size: '18sp'
-                on_press: root.show_config()
-            
-            Button:
-                text: 'VLAN Configuration'
-                font_size: '18sp'
-                on_press: root.show_vlan_list()
-            
-            Button:
-                text: 'Config Actions'
-                font_size: '18sp'
-                on_press: root.show_config_actions()
-        
+
+        Button:
+            text: 'DHCP Clients'
+            font_size: '18sp'
+            on_press: root.show_clients()
+
+        Button:
+            text: 'Static Leases'
+            font_size: '18sp'
+            on_press: root.show_leases()
+
+        Button:
+            text: 'VLANs'
+            font_size: '18sp'
+            on_press: root.show_vlans()
+
+        Button:
+            text: 'Router Config'
+            font_size: '18sp'
+            on_press: root.show_config()
+
+        Button:
+            text: 'Back'
+            size_hint_y: 0.1
+            font_size: '16sp'
+            on_press: root.go_back()
+
+<ConfigureScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+
+        Button:
+            text: 'Static Leases'
+            font_size: '18sp'
+            on_press: root.show_static_leases()
+
+        Button:
+            text: 'DHCP Lease Revocation'
+            font_size: '18sp'
+            on_press: root.show_dhcp_revoke()
+
+        Button:
+            text: 'VLAN Configuration'
+            font_size: '18sp'
+            on_press: root.show_vlan_config()
+
         Button:
             text: 'Back'
             size_hint_y: 0.1
@@ -75,36 +251,36 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             id: title_label
             text: ''
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
+
         BoxLayout:
             size_hint_y: 0.08
             spacing: dp(2)
-            
+
             Label:
                 text: 'MAC'
                 size_hint_x: 0.35
                 bold: True
                 font_size: '14sp'
-            
+
             Label:
                 text: 'IP'
                 size_hint_x: 0.30
                 bold: True
                 font_size: '14sp'
-            
+
             Label:
                 text: 'Hostname'
                 size_hint_x: 0.35
                 bold: True
                 font_size: '14sp'
-        
+
         ScrollView:
             BoxLayout:
                 id: data_layout
@@ -112,16 +288,16 @@
                 size_hint_y: None
                 spacing: dp(2)
                 height: self.minimum_height
-        
+
         BoxLayout:
             size_hint_y: 0.1
             spacing: dp(10)
-            
+
             Button:
                 text: 'Refresh'
                 font_size: '16sp'
                 on_press: root.load_data()
-            
+
             Button:
                 text: 'Back'
                 font_size: '16sp'
@@ -132,36 +308,36 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             id: title_label
             text: ''
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
+
         BoxLayout:
             size_hint_y: 0.08
             spacing: dp(2)
-            
+
             Label:
                 text: 'MAC'
                 size_hint_x: 0.35
                 bold: True
                 font_size: '14sp'
-            
+
             Label:
                 text: 'Hostname'
                 size_hint_x: 0.35
                 bold: True
                 font_size: '14sp'
-            
+
             Label:
                 text: 'IP'
                 size_hint_x: 0.30
                 bold: True
                 font_size: '14sp'
-        
+
         ScrollView:
             BoxLayout:
                 id: data_layout
@@ -169,16 +345,16 @@
                 size_hint_y: None
                 spacing: dp(2)
                 height: self.minimum_height
-        
+
         BoxLayout:
             size_hint_y: 0.1
             spacing: dp(10)
-            
+
             Button:
                 text: 'Refresh'
                 font_size: '16sp'
                 on_press: root.load_data()
-            
+
             Button:
                 text: 'Back'
                 font_size: '16sp'
@@ -189,30 +365,30 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             id: title_label
             text: ''
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
+
         TextInput:
             id: config_text
             size_hint_y: 0.82
             font_size: '12sp'
             readonly: True
             multiline: True
-        
+
         BoxLayout:
             size_hint_y: 0.1
             spacing: dp(10)
-            
+
             Button:
                 text: 'Refresh'
                 font_size: '16sp'
                 on_press: root.load_data()
-            
+
             Button:
                 text: 'Back'
                 font_size: '16sp'
@@ -223,75 +399,288 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             id: title_label
             text: ''
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
+
+        FloatLayout:
+            id: canvas_layout
+            size_hint_y: 0.82
+
         BoxLayout:
-            size_hint_y: 0.08
-            spacing: dp(2)
-            
+            size_hint_y: 0.1
+            spacing: dp(10)
+
+            Button:
+                text: 'Refresh'
+                font_size: '16sp'
+                on_press: root.load_data()
+
+            Button:
+                text: 'Back'
+                font_size: '16sp'
+                on_press: root.go_back()
+
+<ConfigureStaticLeasesScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.06
+            font_size: '20sp'
+            bold: True
+
+        Label:
+            id: status_label
+            text: ''
+            size_hint_y: 0.04
+            font_size: '11sp'
+            color: (0.6, 0.6, 0.6, 1)
+
+        BoxLayout:
+            size_hint_y: 0.06
+            spacing: dp(1)
+
             Label:
-                text: 'VLAN'
-                size_hint_x: 0.20
+                text: 'MAC'
+                size_hint_x: 0.33
                 bold: True
-                font_size: '14sp'
-            
+                font_size: '11sp'
+
+            Label:
+                text: 'Hostname'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '11sp'
+
             Label:
                 text: 'IP'
-                size_hint_x: 0.25
+                size_hint_x: 0.27
                 bold: True
-                font_size: '14sp'
-            
+                font_size: '11sp'
+
             Label:
-                text: 'Brg'
+                text: 'Del'
                 size_hint_x: 0.10
                 bold: True
-                font_size: '14sp'
-            
-            Label:
-                text: 'NAT'
-                size_hint_x: 0.10
-                bold: True
-                font_size: '14sp'
-            
-            Label:
-                text: 'Members'
-                size_hint_x: 0.35
-                bold: True
-                font_size: '14sp'
-        
+                font_size: '11sp'
+
         ScrollView:
             BoxLayout:
                 id: data_layout
                 orientation: 'vertical'
                 size_hint_y: None
-                spacing: dp(2)
+                spacing: dp(1)
                 height: self.minimum_height
-        
+
+        BoxLayout:
+            size_hint_y: 0.06
+            spacing: dp(1)
+
+            TextInput:
+                id: new_mac
+                size_hint_x: 0.33
+                font_size: '11sp'
+                hint_text: 'MAC'
+
+            TextInput:
+                id: new_hostname
+                size_hint_x: 0.30
+                font_size: '11sp'
+                hint_text: 'Hostname'
+
+            TextInput:
+                id: new_ip
+                size_hint_x: 0.27
+                font_size: '11sp'
+                hint_text: 'IP'
+
+            Button:
+                text: '+'
+                size_hint_x: 0.10
+                font_size: '16sp'
+                on_press: root.add_lease()
+
         BoxLayout:
             size_hint_y: 0.1
             spacing: dp(10)
-            
+
             Button:
-                text: 'Add VLAN'
-                font_size: '16sp'
+                text: 'Refresh'
+                font_size: '14sp'
+                on_press: root.refresh_data()
+
+            Button:
+                text: 'Commit'
+                font_size: '14sp'
+                on_press: root.commit_changes()
+
+            Button:
+                text: 'Back'
+                font_size: '14sp'
+                on_press: root.go_back()
+
+<ConfigureDhcpScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.06
+            font_size: '20sp'
+            bold: True
+
+        BoxLayout:
+            size_hint_y: 0.06
+            spacing: dp(1)
+
+            Label:
+                text: ''
+                size_hint_x: 0.10
+                font_size: '11sp'
+
+            Label:
+                text: 'MAC'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '11sp'
+
+            Label:
+                text: 'IP'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '11sp'
+
+            Label:
+                text: 'Hostname'
+                size_hint_x: 0.30
+                bold: True
+                font_size: '11sp'
+
+        ScrollView:
+            BoxLayout:
+                id: data_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                spacing: dp(1)
+                height: self.minimum_height
+
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+
+            Button:
+                text: 'Refresh'
+                font_size: '14sp'
+                on_press: root.load_data()
+
+            Button:
+                text: 'Revoke Selected'
+                font_size: '14sp'
+                on_press: root.revoke_selected()
+
+            Button:
+                text: 'Back'
+                font_size: '14sp'
+                on_press: root.go_back()
+
+<ConfigureVlanScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.06
+            font_size: '20sp'
+            bold: True
+
+        Label:
+            id: status_label
+            text: 'No config loaded - take a snapshot first'
+            size_hint_y: 0.05
+            font_size: '12sp'
+            color: (0.8, 0.4, 0.1, 1)
+
+        BoxLayout:
+            size_hint_y: 0.6
+            spacing: dp(10)
+
+            Button:
+                text: 'Snapshot\nfrom Router'
+                font_size: '14sp'
+                on_press: root.snapshot()
+
+            Button:
+                text: 'Edit VLANs'
+                font_size: '14sp'
+                on_press: root.go_to_edit()
+
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+
+            Button:
+                text: 'Commit Changes'
+                font_size: '14sp'
+                on_press: root.commit_changes()
+
+            Button:
+                text: 'Back'
+                font_size: '14sp'
+                on_press: root.go_back()
+
+        TextInput:
+            id: result_text
+            size_hint_y: 0.19
+            font_size: '10sp'
+            readonly: True
+            multiline: True
+
+<VlanCanvasScreen>:
+    BoxLayout:
+        orientation: 'vertical'
+        padding: dp(10)
+        spacing: dp(10)
+
+        Label:
+            id: title_label
+            text: ''
+            size_hint_y: 0.08
+            font_size: '20sp'
+            bold: True
+
+        FloatLayout:
+            id: canvas_layout
+            size_hint_y: 0.82
+
+        BoxLayout:
+            size_hint_y: 0.1
+            spacing: dp(10)
+
+            Button:
+                text: '+'
+                font_size: '24sp'
                 on_press: root.add_vlan()
-            
-            Button:
-                text: 'Restrictions'
-                font_size: '16sp'
-                on_press: root.show_restrictions()
-            
+
             Button:
                 text: 'Refresh'
                 font_size: '16sp'
-                on_press: root.load_data()
-            
+                on_press: root.refresh()
+
             Button:
                 text: 'Back'
                 font_size: '16sp'
@@ -302,410 +691,154 @@
         orientation: 'vertical'
         padding: dp(10)
         spacing: dp(10)
-        
+
         Label:
             id: title_label
             text: 'Edit VLAN'
             size_hint_y: 0.08
             font_size: '20sp'
             bold: True
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'VLAN ID:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_id
                 size_hint_x: 0.6
                 font_size: '14sp'
                 input_filter: 'int'
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'IP Address:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_ip
                 size_hint_x: 0.6
                 font_size: '14sp'
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'Netmask:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_netmask
                 size_hint_x: 0.6
                 font_size: '14sp'
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'Bridged:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             CheckBox:
                 id: vlan_bridged
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'NAT:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             CheckBox:
                 id: vlan_nat
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'DHCP Enabled:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             CheckBox:
                 id: vlan_dhcp_enabled
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'DHCP Start:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_dhcp_start
                 size_hint_x: 0.6
                 font_size: '14sp'
                 input_filter: 'int'
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'DHCP Size:'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_dhcp_size
                 size_hint_x: 0.6
                 font_size: '14sp'
                 input_filter: 'int'
-        
+
         BoxLayout:
             size_hint_y: 0.02
             spacing: dp(5)
-            
+
             Label:
                 text: 'DHCP Lease (min):'
                 size_hint_x: 0.4
                 font_size: '14sp'
-            
+
             TextInput:
                 id: vlan_dhcp_lease
                 size_hint_x: 0.6
                 font_size: '14sp'
                 input_filter: 'int'
-        
+
         BoxLayout:
             size_hint_y: 0.1
             spacing: dp(10)
-            
+
             Button:
                 text: 'Save'
                 font_size: '16sp'
                 on_press: root.save_vlan()
-            
+
+            Button:
+                id: delete_button
+                text: 'Delete'
+                font_size: '16sp'
+                on_press: root.delete_vlan()
+
             Button:
                 text: 'Cancel'
                 font_size: '16sp'
                 on_press: root.go_back()
-
-<ConfigActionsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
-        
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.06
-            font_size: '20sp'
-            bold: True
-        
-        BoxLayout:
-            size_hint_y: 0.06
-            spacing: dp(5)
-            
-            Label:
-                text: 'File path:'
-                size_hint_x: 0.3
-                font_size: '12sp'
-            
-            TextInput:
-                id: file_path
-                size_hint_x: 0.7
-                font_size: '12sp'
-        
-        BoxLayout:
-            size_hint_y: 0.06
-            spacing: dp(5)
-            
-            Label:
-                text: 'Apply mode:'
-                size_hint_x: 0.3
-                font_size: '12sp'
-            
-            Spinner:
-                id: apply_mode
-                text: 'diff'
-                values: ['diff', 'full']
-                size_hint_x: 0.7
-                font_size: '12sp'
-        
-        BoxLayout:
-            size_hint_y: 0.15
-            spacing: dp(5)
-            
-            Button:
-                text: 'Snapshot'
-                font_size: '12sp'
-                on_press: root.snapshot()
-            
-            Button:
-                text: 'Load'
-                font_size: '12sp'
-                on_press: root.load_file()
-            
-            Button:
-                text: 'Save'
-                font_size: '12sp'
-                on_press: root.save_file()
-        
-        BoxLayout:
-            size_hint_y: 0.15
-            spacing: dp(5)
-            
-            Button:
-                text: 'Validate'
-                font_size: '12sp'
-                on_press: root.validate()
-            
-            Button:
-                text: 'Diff'
-                font_size: '12sp'
-                on_press: root.diff_router()
-            
-            Button:
-                text: 'Apply'
-                font_size: '12sp'
-                on_press: root.apply_config()
-            
-            Button:
-                text: 'Verify'
-                font_size: '12sp'
-                on_press: root.verify_config()
-        
-        TextInput:
-            id: result_text
-            size_hint_y: 0.42
-            font_size: '10sp'
-            readonly: False
-            multiline: True
-        
-        Button:
-            text: 'Back'
-            size_hint_y: 0.1
-            font_size: '16sp'
-            on_press: root.go_back()
-
-<PortAssignScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
-        
-        Label:
-            id: title_label
-            text: 'Port Assignments'
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
-        
-        ScrollView:
-            BoxLayout:
-                id: port_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(2)
-                height: self.minimum_height
-        
-        BoxLayout:
-            size_hint_y: 0.1
-            spacing: dp(10)
-            
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
-
-<VlanRestrictionsScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
-        
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
-        
-        ScrollView:
-            BoxLayout:
-                id: data_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(2)
-                height: self.minimum_height
-        
-        BoxLayout:
-            size_hint_y: 0.1
-            spacing: dp(10)
-            
-            Button:
-                text: 'Add Restriction'
-                font_size: '14sp'
-                on_press: root.add_restriction()
-            
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.load_data()
-            
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
-
-<RestrictionAddScreen>:
-    BoxLayout:
-        orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
-        
-        Label:
-            id: title_label
-            text: 'Add Restriction'
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
-        
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-            
-            Label:
-                text: 'From VLAN ID:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-            
-            TextInput:
-                id: from_vlan
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-        
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-            
-            Label:
-                text: 'To VLAN ID:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-            
-            TextInput:
-                id: to_vlan
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-        
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-            
-            Label:
-                text: 'Description:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-            
-            TextInput:
-                id: desc
-                size_hint_x: 0.6
-                font_size: '14sp'
-        
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-            
-            Label:
-                text: 'Bidirectional:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-            
-            CheckBox:
-                id: bidi
-        
-        BoxLayout:
-            size_hint_y: 0.1
-            spacing: dp(10)
-            
-            Button:
-                text: 'Save'
-                font_size: '16sp'
-                on_press: root.save_restriction()
-            
-            Button:
-                text: 'Cancel'
-                font_size: '16sp'
-                on_press: root.go_back()
-
-<ConnectionButton@Button>:
-    size_hint_y: None
-    height: dp(50)
-    font_size: '18sp'
-
-<DataRow@BoxLayout>:
-    size_hint_y: None
-    height: dp(40)
-    spacing: dp(2)

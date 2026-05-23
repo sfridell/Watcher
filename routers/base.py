@@ -11,6 +11,11 @@ class RouterBase(ABC):
         pass
 
     @abstractmethod
+    def remove_dhcp_leases(self, conn, mac_addresses: List[str]):
+        """Remove DHCP lease entries matching the given MAC addresses and restart dnsmasq."""
+        pass
+
+    @abstractmethod
     def get_static_leases(self, conn) -> List[List[str]]:
         pass
 
