@@ -1,10 +1,20 @@
 import os
 import json
+import paramiko
 from fabric import Connection
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from routers import get_router_handler
+
+if 'ssh-rsa' not in paramiko.Transport._preferred_keys:
+    paramiko.Transport._preferred_keys = ('ssh-rsa',) + tuple(paramiko.Transport._preferred_keys)
+if 'ssh-rsa' not in paramiko.Transport._preferred_pubkeys:
+    paramiko.Transport._preferred_pubkeys = ('ssh-rsa',) + tuple(paramiko.Transport._preferred_pubkeys)
+if 'ssh-rsa' not in paramiko.Transport._key_info:
+    paramiko.Transport._key_info['ssh-rsa'] = paramiko.RSAKey
+if 'ssh-rsa' not in paramiko.RSAKey.HASHES:
+    paramiko.RSAKey.HASHES['ssh-rsa'] = hashes.SHA1
 
 
 class _MockConnection:
