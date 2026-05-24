@@ -33,7 +33,7 @@ RUN \
   python3 -m pip install "kivy[base]" kivy-examples
 
 RUN \
-  apt-get update && apt-get install -y --no-install-recommends curl git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client
+  apt-get update && apt-get install -y --no-install-recommends curl git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client xclip
   
 RUN \
   python3 -m pip install --upgrade Cython==0.29.33 virtualenv

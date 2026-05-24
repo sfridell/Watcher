@@ -2,843 +2,825 @@
 #:import dp kivy.metrics.dp
 
 <ConnectionListScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            text: 'Watcher -- Connections'
-            size_hint_y: 0.1
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: 'Watcher -- Connections'
+            right_action_items: [['plus', lambda x: root.new_connection(), 'New Connection']]
 
-        ScrollView:
-            BoxLayout:
-                id: button_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(5)
-                height: self.minimum_height
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(10)
 
-        Button:
-            text: 'New Connection'
-            size_hint_y: 0.1
-            font_size: '16sp'
-            on_press: root.new_connection()
+            ScrollView:
+                MDBoxLayout:
+                    id: button_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(5)
+                    height: self.minimum_height
 
 <NewConnectionScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            text: 'New Connection'
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: 'New Connection'
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        BoxLayout:
-            size_hint_y: 0.07
-            spacing: dp(5)
-
-            Label:
-                text: 'Name:'
-                size_hint_x: 0.3
-                font_size: '14sp'
-
-            TextInput:
-                id: conn_name
-                size_hint_x: 0.7
-                font_size: '14sp'
-                text: ''
-
-        BoxLayout:
-            size_hint_y: 0.07
-            spacing: dp(5)
-
-            Label:
-                text: 'Router Type:'
-                size_hint_x: 0.3
-                font_size: '14sp'
-
-            Spinner:
-                id: router_type
-                text: 'ddwrt'
-                values: ['ddwrt', 'ddwrt_v3_netgear_r7000', 'mock']
-                size_hint_x: 0.7
-                font_size: '14sp'
-                on_text: root.on_router_type_change(self, args[1])
-
-        BoxLayout:
-            size_hint_y: 0.07
-            spacing: dp(5)
-
-            Label:
-                text: 'IP Address:'
-                size_hint_x: 0.3
-                font_size: '14sp'
-
-            TextInput:
-                id: conn_ip
-                size_hint_x: 0.7
-                font_size: '14sp'
-                text: ''
-
-        BoxLayout:
-            size_hint_y: 0.07
-            spacing: dp(5)
-
-            Label:
-                text: 'Port:'
-                size_hint_x: 0.3
-                font_size: '14sp'
-
-            TextInput:
-                id: conn_port
-                size_hint_x: 0.7
-                font_size: '14sp'
-                text: '22'
-                input_filter: 'int'
-
-        BoxLayout:
-            size_hint_y: 0.07
-            spacing: dp(5)
-
-            Label:
-                text: 'Username:'
-                size_hint_x: 0.3
-                font_size: '14sp'
-
-            TextInput:
-                id: conn_username
-                size_hint_x: 0.7
-                font_size: '14sp'
-                text: ''
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Save'
-                font_size: '16sp'
-                on_press: root.save_connection()
+            MDBoxLayout:
+                size_hint_y: 0.08
+                spacing: dp(5)
 
-            Button:
-                text: 'Cancel'
-                font_size: '16sp'
-                on_press: root.go_back()
+                MDLabel:
+                    text: 'Name:'
+                    size_hint_x: 0.3
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: conn_name
+                    size_hint_x: 0.7
+
+            MDBoxLayout:
+                size_hint_y: 0.08
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'Router Type:'
+                    size_hint_x: 0.3
+                    font_style: 'Body1'
+
+                Spinner:
+                    id: router_type
+                    text: 'ddwrt'
+                    values: ['ddwrt', 'ddwrt_v3_netgear_r7000', 'mock']
+                    size_hint_x: 0.7
+                    font_size: '14sp'
+                    on_text: root.on_router_type_change(self, args[1])
+
+            MDBoxLayout:
+                size_hint_y: 0.08
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'IP Address:'
+                    size_hint_x: 0.3
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: conn_ip
+                    size_hint_x: 0.7
+
+            MDBoxLayout:
+                size_hint_y: 0.08
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'Port:'
+                    size_hint_x: 0.3
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: conn_port
+                    size_hint_x: 0.7
+                    text: '22'
+                    input_filter: 'int'
+
+            MDBoxLayout:
+                size_hint_y: 0.08
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'Username:'
+                    size_hint_x: 0.3
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: conn_username
+                    size_hint_x: 0.7
+
+            MDBoxLayout:
+                size_hint_y: 0.12
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Save'
+                    on_press: root.save_connection()
+
+                MDFlatButton:
+                    text: 'Cancel'
+                    on_press: root.go_back()
 
 <ConnectionMenuScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        BoxLayout:
-            size_hint_y: 0.12
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Label:
-                id: title_label
-                text: ''
-                size_hint_x: 0.5
-                font_size: '18sp'
-                bold: True
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(80)
+                spacing: dp(10)
 
-            Button:
-                text: '\u25C9 Status'
-                size_hint_x: 0.25
-                font_size: '16sp'
-                on_press: root.show_status()
+                MDRectangleFlatButton:
+                    text: 'Status'
+                    size_hint_x: 0.5
+                    on_press: root.show_status()
 
-            Button:
-                text: '\u2699 Configure'
-                size_hint_x: 0.25
-                font_size: '16sp'
-                on_press: root.show_configure()
+                MDRectangleFlatButton:
+                    text: 'Configure'
+                    size_hint_x: 0.5
+                    on_press: root.show_configure()
 
-        Label:
-            id: info_label
-            text: 'Select View or Configure to manage this connection'
-            size_hint_y: 0.08
-            font_size: '12sp'
-            color: (0.6, 0.6, 0.6, 1)
-
-        Button:
-            text: 'Back'
-            size_hint_y: 0.1
-            font_size: '16sp'
-            on_press: root.go_back()
+            MDLabel:
+                id: info_label
+                text: 'Select View or Configure to manage this connection'
+                size_hint_y: None
+                height: dp(30)
+                font_style: 'Caption'
+                theme_text_color: 'Secondary'
+                halign: 'center'
 
 <StatusScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        Button:
-            text: 'DHCP Clients'
-            font_size: '18sp'
-            on_press: root.show_clients()
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(10)
 
-        Button:
-            text: 'Static Leases'
-            font_size: '18sp'
-            on_press: root.show_leases()
+            MDRectangleFlatButton:
+                text: 'DHCP Clients'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_clients()
 
-        Button:
-            text: 'VLANs'
-            font_size: '18sp'
-            on_press: root.show_vlans()
+            MDRectangleFlatButton:
+                text: 'Static Leases'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_leases()
 
-        Button:
-            text: 'Router Config'
-            font_size: '18sp'
-            on_press: root.show_config()
+            MDRectangleFlatButton:
+                text: 'VLANs'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_vlans()
 
-        Button:
-            text: 'Back'
-            size_hint_y: 0.1
-            font_size: '16sp'
-            on_press: root.go_back()
+            MDRectangleFlatButton:
+                text: 'Router Config'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_config()
 
 <ConfigureScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        Button:
-            text: 'Static Leases'
-            font_size: '18sp'
-            on_press: root.show_static_leases()
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(10)
 
-        Button:
-            text: 'DHCP Lease Revocation'
-            font_size: '18sp'
-            on_press: root.show_dhcp_revoke()
+            MDRectangleFlatButton:
+                text: 'Static Leases'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_static_leases()
 
-        Button:
-            text: 'VLAN Configuration'
-            font_size: '18sp'
-            on_press: root.show_vlan_config()
+            MDRectangleFlatButton:
+                text: 'DHCP Lease Revocation'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_dhcp_revoke()
 
-        Button:
-            text: 'Back'
-            size_hint_y: 0.1
-            font_size: '16sp'
-            on_press: root.go_back()
+            MDRectangleFlatButton:
+                text: 'VLAN Configuration'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_vlan_config()
 
 <ClientsScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        BoxLayout:
-            size_hint_y: 0.08
-            spacing: dp(2)
-
-            Label:
-                text: 'MAC'
-                size_hint_x: 0.35
-                bold: True
-                font_size: '14sp'
-
-            Label:
-                text: 'IP'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '14sp'
-
-            Label:
-                text: 'Hostname'
-                size_hint_x: 0.35
-                bold: True
-                font_size: '14sp'
-
-        ScrollView:
-            BoxLayout:
-                id: data_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(2)
-                height: self.minimum_height
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.load_data()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(40)
+                spacing: dp(2)
 
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
+                MDLabel:
+                    text: 'MAC'
+                    size_hint_x: 0.35
+                    font_style: 'Subtitle2'
+                    bold: True
+
+                MDLabel:
+                    text: 'IP'
+                    size_hint_x: 0.30
+                    font_style: 'Subtitle2'
+                    bold: True
+
+                MDLabel:
+                    text: 'Hostname'
+                    size_hint_x: 0.35
+                    font_style: 'Subtitle2'
+                    bold: True
+
+            ScrollView:
+                MDBoxLayout:
+                    id: data_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(2)
+                    height: self.minimum_height
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_data()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <StaticLeasesScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        BoxLayout:
-            size_hint_y: 0.08
-            spacing: dp(2)
-
-            Label:
-                text: 'MAC'
-                size_hint_x: 0.35
-                bold: True
-                font_size: '14sp'
-
-            Label:
-                text: 'Hostname'
-                size_hint_x: 0.35
-                bold: True
-                font_size: '14sp'
-
-            Label:
-                text: 'IP'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '14sp'
-
-        ScrollView:
-            BoxLayout:
-                id: data_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(2)
-                height: self.minimum_height
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.load_data()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(40)
+                spacing: dp(2)
 
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
+                MDLabel:
+                    text: 'MAC'
+                    size_hint_x: 0.35
+                    font_style: 'Subtitle2'
+                    bold: True
+
+                MDLabel:
+                    text: 'Hostname'
+                    size_hint_x: 0.35
+                    font_style: 'Subtitle2'
+                    bold: True
+
+                MDLabel:
+                    text: 'IP'
+                    size_hint_x: 0.30
+                    font_style: 'Subtitle2'
+                    bold: True
+
+            ScrollView:
+                MDBoxLayout:
+                    id: data_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(2)
+                    height: self.minimum_height
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_data()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <ConfigScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        TextInput:
-            id: config_text
-            size_hint_y: 0.82
-            font_size: '12sp'
-            readonly: True
-            multiline: True
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.load_data()
+            MDTextField:
+                id: config_text
+                size_hint_y: 0.82
+                readonly: True
+                multiline: True
 
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_data()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <VlanListScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        FloatLayout:
-            id: canvas_layout
-            size_hint_y: 0.82
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.load_data()
+            FloatLayout:
+                id: canvas_layout
+                size_hint_y: 0.82
 
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_data()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <ConfigureStaticLeasesScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.06
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        Label:
-            id: status_label
-            text: ''
-            size_hint_y: 0.04
-            font_size: '11sp'
-            color: (0.6, 0.6, 0.6, 1)
-
-        BoxLayout:
-            size_hint_y: 0.06
-            spacing: dp(1)
-
-            Label:
-                text: 'MAC'
-                size_hint_x: 0.33
-                bold: True
-                font_size: '11sp'
-
-            Label:
-                text: 'Hostname'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '11sp'
-
-            Label:
-                text: 'IP'
-                size_hint_x: 0.27
-                bold: True
-                font_size: '11sp'
-
-            Label:
-                text: 'Del'
-                size_hint_x: 0.10
-                bold: True
-                font_size: '11sp'
-
-        ScrollView:
-            BoxLayout:
-                id: data_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(1)
-                height: self.minimum_height
-
-        BoxLayout:
-            size_hint_y: 0.06
-            spacing: dp(1)
-
-            TextInput:
-                id: new_mac
-                size_hint_x: 0.33
-                font_size: '11sp'
-                hint_text: 'MAC'
-
-            TextInput:
-                id: new_hostname
-                size_hint_x: 0.30
-                font_size: '11sp'
-                hint_text: 'Hostname'
-
-            TextInput:
-                id: new_ip
-                size_hint_x: 0.27
-                font_size: '11sp'
-                hint_text: 'IP'
-
-            Button:
-                text: '+'
-                size_hint_x: 0.10
-                font_size: '16sp'
-                on_press: root.add_lease()
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '14sp'
-                on_press: root.refresh_data()
+            MDLabel:
+                id: status_label
+                text: ''
+                size_hint_y: None
+                height: dp(20)
+                font_style: 'Caption'
+                theme_text_color: 'Secondary'
 
-            Button:
-                text: 'Commit'
-                font_size: '14sp'
-                on_press: root.commit_changes()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(30)
+                spacing: dp(1)
 
-            Button:
-                text: 'Back'
-                font_size: '14sp'
-                on_press: root.go_back()
+                MDLabel:
+                    text: 'MAC'
+                    size_hint_x: 0.33
+                    font_style: 'Caption'
+                    bold: True
+
+                MDLabel:
+                    text: 'Hostname'
+                    size_hint_x: 0.30
+                    font_style: 'Caption'
+                    bold: True
+
+                MDLabel:
+                    text: 'IP'
+                    size_hint_x: 0.27
+                    font_style: 'Caption'
+                    bold: True
+
+                MDLabel:
+                    text: 'Del'
+                    size_hint_x: 0.10
+                    font_style: 'Caption'
+                    bold: True
+
+            ScrollView:
+                MDBoxLayout:
+                    id: data_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(1)
+                    height: self.minimum_height
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(40)
+                spacing: dp(1)
+
+                MDTextField:
+                    id: new_mac
+                    size_hint_x: 0.33
+                    hint_text: 'MAC'
+
+                MDTextField:
+                    id: new_hostname
+                    size_hint_x: 0.30
+                    hint_text: 'Hostname'
+
+                MDTextField:
+                    id: new_ip
+                    size_hint_x: 0.27
+                    hint_text: 'IP'
+
+                MDRaisedButton:
+                    text: '+'
+                    size_hint_x: 0.10
+                    on_press: root.add_lease()
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.refresh_data()
+
+                MDRaisedButton:
+                    text: 'Commit'
+                    on_press: root.commit_changes()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <ConfigureDhcpScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.06
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        BoxLayout:
-            size_hint_y: 0.06
-            spacing: dp(1)
-
-            Label:
-                text: ''
-                size_hint_x: 0.10
-                font_size: '11sp'
-
-            Label:
-                text: 'MAC'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '11sp'
-
-            Label:
-                text: 'IP'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '11sp'
-
-            Label:
-                text: 'Hostname'
-                size_hint_x: 0.30
-                bold: True
-                font_size: '11sp'
-
-        ScrollView:
-            BoxLayout:
-                id: data_layout
-                orientation: 'vertical'
-                size_hint_y: None
-                spacing: dp(1)
-                height: self.minimum_height
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Refresh'
-                font_size: '14sp'
-                on_press: root.load_data()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(30)
+                spacing: dp(1)
 
-            Button:
-                text: 'Revoke Selected'
-                font_size: '14sp'
-                on_press: root.revoke_selected()
+                MDLabel:
+                    text: ''
+                    size_hint_x: 0.10
+                    font_style: 'Caption'
 
-            Button:
-                text: 'Back'
-                font_size: '14sp'
-                on_press: root.go_back()
+                MDLabel:
+                    text: 'MAC'
+                    size_hint_x: 0.30
+                    font_style: 'Caption'
+                    bold: True
+
+                MDLabel:
+                    text: 'IP'
+                    size_hint_x: 0.30
+                    font_style: 'Caption'
+                    bold: True
+
+                MDLabel:
+                    text: 'Hostname'
+                    size_hint_x: 0.30
+                    font_style: 'Caption'
+                    bold: True
+
+            ScrollView:
+                MDBoxLayout:
+                    id: data_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(1)
+                    height: self.minimum_height
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_data()
+
+                MDRaisedButton:
+                    text: 'Revoke Selected'
+                    on_press: root.revoke_selected()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <ConfigureVlanScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.06
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        Label:
-            id: status_label
-            text: 'No config loaded - take a snapshot first'
-            size_hint_y: 0.05
-            font_size: '12sp'
-            color: (0.8, 0.4, 0.1, 1)
-
-        BoxLayout:
-            size_hint_y: 0.6
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Snapshot\nfrom Router'
-                font_size: '14sp'
-                on_press: root.snapshot()
+            MDLabel:
+                id: status_label
+                text: 'No config loaded - take a snapshot first'
+                size_hint_y: None
+                height: dp(24)
+                font_style: 'Caption'
+                theme_text_color: 'Custom'
+                color: (0.8, 0.4, 0.1, 1)
 
-            Button:
-                text: 'Edit VLANs'
-                font_size: '14sp'
-                on_press: root.go_to_edit()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(100)
+                spacing: dp(10)
 
-        BoxLayout:
-            size_hint_y: 0.1
-            spacing: dp(10)
+                MDRaisedButton:
+                    text: 'Snapshot\nfrom Router'
+                    on_press: root.snapshot()
 
-            Button:
-                text: 'Commit Changes'
-                font_size: '14sp'
-                on_press: root.commit_changes()
+                MDRectangleFlatButton:
+                    text: 'Edit VLANs'
+                    on_press: root.go_to_edit()
 
-            Button:
-                text: 'Back'
-                font_size: '14sp'
-                on_press: root.go_back()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
 
-        TextInput:
-            id: result_text
-            size_hint_y: 0.19
-            font_size: '10sp'
-            readonly: True
-            multiline: True
+                MDRaisedButton:
+                    text: 'Commit Changes'
+                    on_press: root.commit_changes()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
+
+            MDTextField:
+                id: result_text
+                size_hint_y: 0.19
+                readonly: True
+                multiline: True
 
 <VlanCanvasScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: ''
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        FloatLayout:
-            id: canvas_layout
-            size_hint_y: 0.82
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: '+'
-                font_size: '24sp'
-                on_press: root.add_vlan()
+            FloatLayout:
+                id: canvas_layout
+                size_hint_y: 0.82
 
-            Button:
-                text: 'Refresh'
-                font_size: '16sp'
-                on_press: root.refresh()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
 
-            Button:
-                text: 'Back'
-                font_size: '16sp'
-                on_press: root.go_back()
+                MDIconButton:
+                    icon: 'plus'
+                    on_press: root.add_vlan()
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.refresh()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
 
 <VlanEditScreen>:
-    BoxLayout:
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: dp(10)
-        spacing: dp(10)
 
-        Label:
-            id: title_label
-            text: 'Edit VLAN'
-            size_hint_y: 0.08
-            font_size: '20sp'
-            bold: True
+        MDTopAppBar:
+            id: toolbar
+            title: 'Edit VLAN'
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'VLAN ID:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_id
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'IP Address:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_ip
-                size_hint_x: 0.6
-                font_size: '14sp'
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'Netmask:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_netmask
-                size_hint_x: 0.6
-                font_size: '14sp'
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'Bridged:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            CheckBox:
-                id: vlan_bridged
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'NAT:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            CheckBox:
-                id: vlan_nat
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'DHCP Enabled:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            CheckBox:
-                id: vlan_dhcp_enabled
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'DHCP Start:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_dhcp_start
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'DHCP Size:'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_dhcp_size
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-
-        BoxLayout:
-            size_hint_y: 0.02
-            spacing: dp(5)
-
-            Label:
-                text: 'DHCP Lease (min):'
-                size_hint_x: 0.4
-                font_size: '14sp'
-
-            TextInput:
-                id: vlan_dhcp_lease
-                size_hint_x: 0.6
-                font_size: '14sp'
-                input_filter: 'int'
-
-        BoxLayout:
-            size_hint_y: 0.1
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
             spacing: dp(10)
 
-            Button:
-                text: 'Save'
-                font_size: '16sp'
-                on_press: root.save_vlan()
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
 
-            Button:
-                id: delete_button
-                text: 'Delete'
-                font_size: '16sp'
-                on_press: root.delete_vlan()
+                MDLabel:
+                    text: 'VLAN ID:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
 
-            Button:
-                text: 'Cancel'
-                font_size: '16sp'
-                on_press: root.go_back()
+                MDTextField:
+                    id: vlan_id
+                    size_hint_x: 0.6
+                    input_filter: 'int'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'IP Address:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: vlan_ip
+                    size_hint_x: 0.6
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'Netmask:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: vlan_netmask
+                    size_hint_x: 0.6
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'Bridged:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDCheckbox:
+                    id: vlan_bridged
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'NAT:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDCheckbox:
+                    id: vlan_nat
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'DHCP Enabled:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDCheckbox:
+                    id: vlan_dhcp_enabled
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'DHCP Start:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: vlan_dhcp_start
+                    size_hint_x: 0.6
+                    input_filter: 'int'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'DHCP Size:'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: vlan_dhcp_size
+                    size_hint_x: 0.6
+                    input_filter: 'int'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(56)
+                spacing: dp(5)
+
+                MDLabel:
+                    text: 'DHCP Lease (min):'
+                    size_hint_x: 0.4
+                    font_style: 'Body1'
+
+                MDTextField:
+                    id: vlan_dhcp_lease
+                    size_hint_x: 0.6
+                    input_filter: 'int'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Save'
+                    on_press: root.save_vlan()
+
+                MDRaisedButton:
+                    id: delete_button
+                    text: 'Delete'
+                    on_press: root.delete_vlan()
+
+                MDFlatButton:
+                    text: 'Cancel'
+                    on_press: root.go_back()

@@ -5,14 +5,20 @@ import json
 import math
 import logging
 import io
-from kivy.app import App
-from kivy.lang import Builder
+from kivymd.app import MDApp
+
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.checkbox import CheckBox
-from kivy.uix.popup import Popup
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDRaisedButton, MDFlatButton, MDIconButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.selectioncontrol import MDCheckbox
+from kivymd.uix.button import MDRectangleFlatButton  # noqa: F401 - used in KV
+from kivymd.uix.textfield import MDTextField  # noqa: F401 - used in KV
+from kivymd.uix.toolbar import MDTopAppBar  # noqa: F401 - used in KV
+from kivy.uix.spinner import Spinner  # noqa: F401 - used in KV
+from kivy.uix.scrollview import ScrollView  # noqa: F401 - used in KV
+from kivy.uix.floatlayout import FloatLayout  # noqa: F401 - used in KV
 from kivy.metrics import dp
 from kivy.properties import StringProperty, NumericProperty
 from kivy.graphics import Color, Line, Ellipse, Triangle, InstructionGroup
@@ -25,7 +31,7 @@ logging.getLogger('paramiko').setLevel(logging.WARNING)
 logging.getLogger('invoke').setLevel(logging.WARNING)
 logging.getLogger('fabric').setLevel(logging.WARNING)
 
-Builder.load_file('watcher.kv')
+
 
 DOUBLE_CLICK_TIMEOUT = 0.3
 LONG_PRESS_TIMEOUT = 0.5
@@ -118,11 +124,12 @@ def point_to_segment_distance(px, py, x1, y1, x2, y2):
     return math.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2)
 
 
-class VlanCircle(Label):
+class VlanCircle(MDLabel):
     vlan_id = NumericProperty(0)
 
     def __init__(self, vlan_id, vlan_data, **kwargs):
         super().__init__(**kwargs)
+        self.theme_text_color = 'Custom'
         self.vlan_id = vlan_id
         self.vlan_data = vlan_data
         self.size_hint = (None, None)
@@ -162,10 +169,12 @@ class ConnectionListScreen(Screen):
             db = connectiondb.ConnectionDB()
             connections = list(db.connections.keys())
             for conn_name in connections:
-                btn = Button(text=conn_name,
-                             size_hint_y=None,
-                             height=dp(50),
-                             font_size='18sp')
+                btn = MDRaisedButton(text=conn_name,
+                                     size_hint_y=None,
+                                     size_hint_x=None,
+                                     width=dp(280),
+                                     height=dp(50),
+                                     pos_hint={'center_x': 0.5})
                 btn.bind(on_press=lambda instance, name=conn_name: self.select_connection(name))
                 self.ids.button_layout.add_widget(btn)
         except Exception as e:
@@ -179,10 +188,14 @@ class ConnectionListScreen(Screen):
         self.manager.current = 'new_connection'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class NewConnectionScreen(Screen):
@@ -248,10 +261,14 @@ class NewConnectionScreen(Screen):
         self.manager.current = 'connections'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class ConnectionMenuScreen(Screen):
@@ -259,7 +276,7 @@ class ConnectionMenuScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'{conn_name}'
+        self.ids.toolbar.title = f'{conn_name}'
 
     def show_status(self):
         self.manager.get_screen('status').set_connection(self.connection_name)
@@ -278,7 +295,7 @@ class StatusScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'Status - {conn_name}'
+        self.ids.toolbar.title = f'Status - {conn_name}'
 
     def show_clients(self):
         self.manager.get_screen('clients').set_connection(self.connection_name)
@@ -305,7 +322,7 @@ class ConfigureScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'Configure - {conn_name}'
+        self.ids.toolbar.title = f'Configure - {conn_name}'
 
     def show_static_leases(self):
         self.manager.get_screen('configure_static_leases').set_connection(self.connection_name)
@@ -328,7 +345,7 @@ class ClientsScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'DHCP Clients - {conn_name}'
+        self.ids.toolbar.title = f'DHCP Clients - {conn_name}'
 
     def on_enter(self):
         self.load_data()
@@ -343,10 +360,10 @@ class ClientsScreen(Screen):
                 for i, line in enumerate(lines[2:], start=2):
                     parts = line.split()
                     if len(parts) >= 4:
-                        row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(2))
-                        row.add_widget(Label(text=parts[1], size_hint_x=0.35, font_size='12sp'))
-                        row.add_widget(Label(text=parts[2], size_hint_x=0.30, font_size='12sp'))
-                        row.add_widget(Label(text=parts[3], size_hint_x=0.35, font_size='12sp'))
+                        row = MDBoxLayout(size_hint_y=None, height=dp(40), spacing=dp(2))
+                        row.add_widget(MDLabel(text=parts[1], size_hint_x=0.35, font_style='Body2'))
+                        row.add_widget(MDLabel(text=parts[2], size_hint_x=0.30, font_style='Body2'))
+                        row.add_widget(MDLabel(text=parts[3], size_hint_x=0.35, font_style='Body2'))
                         self.ids.data_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load clients: {str(e)}")
@@ -355,10 +372,14 @@ class ClientsScreen(Screen):
         self.manager.current = 'status'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class StaticLeasesScreen(Screen):
@@ -366,7 +387,7 @@ class StaticLeasesScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'Static Leases - {conn_name}'
+        self.ids.toolbar.title = f'Static Leases - {conn_name}'
 
     def on_enter(self):
         self.load_data()
@@ -381,10 +402,10 @@ class StaticLeasesScreen(Screen):
                 for i, line in enumerate(lines[2:], start=2):
                     parts = line.split()
                     if len(parts) >= 3:
-                        row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(2))
-                        row.add_widget(Label(text=parts[0], size_hint_x=0.35, font_size='12sp'))
-                        row.add_widget(Label(text=parts[1], size_hint_x=0.35, font_size='12sp'))
-                        row.add_widget(Label(text=parts[2], size_hint_x=0.30, font_size='12sp'))
+                        row = MDBoxLayout(size_hint_y=None, height=dp(40), spacing=dp(2))
+                        row.add_widget(MDLabel(text=parts[0], size_hint_x=0.35, font_style='Body2'))
+                        row.add_widget(MDLabel(text=parts[1], size_hint_x=0.35, font_style='Body2'))
+                        row.add_widget(MDLabel(text=parts[2], size_hint_x=0.30, font_style='Body2'))
                         self.ids.data_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load leases: {str(e)}")
@@ -393,10 +414,14 @@ class StaticLeasesScreen(Screen):
         self.manager.current = 'status'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class ConfigScreen(Screen):
@@ -404,7 +429,7 @@ class ConfigScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'Router Config - {conn_name}'
+        self.ids.toolbar.title = f'Router Config - {conn_name}'
 
     def on_enter(self):
         self.load_data()
@@ -421,10 +446,14 @@ class ConfigScreen(Screen):
         self.manager.current = 'status'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class VlanListScreen(Screen):
@@ -438,14 +467,14 @@ class VlanListScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'VLANs - {conn_name}'
+        self.ids.toolbar.title = f'VLANs - {conn_name}'
 
     def on_enter(self):
         self.load_data()
 
     def load_data(self):
         try:
-            app = App.get_running_app()
+            app = MDApp.get_running_app()
             output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
             data = output.getvalue()
             config = NetworkConfig.from_dict(json.loads(data))
@@ -556,10 +585,14 @@ class VlanListScreen(Screen):
         self.manager.current = 'status'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class ConfigureStaticLeasesScreen(Screen):
@@ -568,7 +601,7 @@ class ConfigureStaticLeasesScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'Configure Static Leases - {conn_name}'
+        self.ids.toolbar.title = f'Configure Static Leases - {conn_name}'
 
     def on_enter(self):
         self.refresh_data()
@@ -594,11 +627,11 @@ class ConfigureStaticLeasesScreen(Screen):
         if self._pending_leases is None:
             return
         for i, lease in enumerate(self._pending_leases):
-            row = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(1))
-            row.add_widget(Label(text=lease[0], size_hint_x=0.33, font_size='11sp'))
-            row.add_widget(Label(text=lease[1], size_hint_x=0.30, font_size='11sp'))
-            row.add_widget(Label(text=lease[2], size_hint_x=0.27, font_size='11sp'))
-            del_btn = Button(text='X', size_hint_x=0.10, font_size='12sp')
+            row = MDBoxLayout(size_hint_y=None, height=dp(30), spacing=dp(1))
+            row.add_widget(MDLabel(text=lease[0], size_hint_x=0.33, font_style='Caption'))
+            row.add_widget(MDLabel(text=lease[1], size_hint_x=0.30, font_style='Caption'))
+            row.add_widget(MDLabel(text=lease[2], size_hint_x=0.27, font_style='Caption'))
+            del_btn = MDIconButton(icon='close', size_hint_x=0.10)
             del_btn.bind(on_press=lambda instance, idx=i: self.remove_lease(idx))
             row.add_widget(del_btn)
             self.ids.data_layout.add_widget(row)
@@ -641,20 +674,8 @@ class ConfigureStaticLeasesScreen(Screen):
             self.show_error("No leases loaded. Refresh first.")
             return
 
-        content = BoxLayout(orientation='vertical', spacing=dp(10))
-        content.add_widget(Label(
-            text=f'Apply {len(self._pending_leases)} static leases\n'
-                 f'to the router?',
-            halign='center',
-        ))
-
-        btn_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
-        popup = Popup(title='Commit Static Leases',
-                      content=content,
-                      size_hint=(0.8, 0.4))
-
         def confirm(instance):
-            popup.dismiss()
+            dialog.dismiss()
             try:
                 db = connectiondb.ConnectionDB()
                 conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
@@ -669,23 +690,31 @@ class ConfigureStaticLeasesScreen(Screen):
             except Exception as e:
                 self.show_error(f"Commit failed: {str(e)}")
 
-        btn_confirm = Button(text='Apply')
-        btn_cancel = Button(text='Cancel')
-        btn_confirm.bind(on_press=confirm)
-        btn_cancel.bind(on_press=lambda i: popup.dismiss())
-        btn_layout.add_widget(btn_confirm)
-        btn_layout.add_widget(btn_cancel)
-        content.add_widget(btn_layout)
-        popup.open()
+        apply_btn = MDRaisedButton(text='Apply')
+        cancel_btn = MDFlatButton(text='Cancel')
+
+        apply_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+        dialog = MDDialog(
+            title='Commit Static Leases',
+            text=f'Apply {len(self._pending_leases)} static leases to the router?',
+            buttons=[apply_btn, cancel_btn]
+        )
+        dialog.open()
 
     def go_back(self):
         self.manager.current = 'configure'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class ConfigureDhcpScreen(Screen):
@@ -694,7 +723,7 @@ class ConfigureDhcpScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'DHCP Lease Revocation - {conn_name}'
+        self.ids.toolbar.title = f'DHCP Lease Revocation - {conn_name}'
 
     def on_enter(self):
         self._selected_macs = set()
@@ -712,13 +741,13 @@ class ConfigureDhcpScreen(Screen):
                     parts = line.split()
                     if len(parts) >= 4:
                         mac = parts[1]
-                        row = BoxLayout(size_hint_y=None, height=dp(35), spacing=dp(1))
-                        cb = CheckBox(active=False, size_hint_x=0.10)
+                        row = MDBoxLayout(size_hint_y=None, height=dp(35), spacing=dp(1))
+                        cb = MDCheckbox(active=False, size_hint_x=0.10)
                         cb.bind(active=lambda instance, value, m=mac: self._toggle_mac(m, value))
                         row.add_widget(cb)
-                        row.add_widget(Label(text=parts[1], size_hint_x=0.30, font_size='11sp'))
-                        row.add_widget(Label(text=parts[2], size_hint_x=0.30, font_size='11sp'))
-                        row.add_widget(Label(text=parts[3], size_hint_x=0.30, font_size='11sp'))
+                        row.add_widget(MDLabel(text=parts[1], size_hint_x=0.30, font_style='Caption'))
+                        row.add_widget(MDLabel(text=parts[2], size_hint_x=0.30, font_style='Caption'))
+                        row.add_widget(MDLabel(text=parts[3], size_hint_x=0.30, font_style='Caption'))
                         self.ids.data_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load DHCP clients: {str(e)}")
@@ -736,20 +765,8 @@ class ConfigureDhcpScreen(Screen):
 
         mac_list = ', '.join(sorted(self._selected_macs))
 
-        content = BoxLayout(orientation='vertical', spacing=dp(10))
-        content.add_widget(Label(
-            text=f'Revoke {len(self._selected_macs)} DHCP lease(s)?\n'
-                 f'MACs: {mac_list}',
-            halign='center',
-        ))
-
-        btn_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
-        popup = Popup(title='Revoke Leases',
-                      content=content,
-                      size_hint=(0.8, 0.4))
-
         def confirm(instance):
-            popup.dismiss()
+            dialog.dismiss()
             try:
                 db = connectiondb.ConnectionDB()
                 conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
@@ -762,23 +779,31 @@ class ConfigureDhcpScreen(Screen):
             except Exception as e:
                 self.show_error(f"Revoke failed: {str(e)}")
 
-        btn_confirm = Button(text='Revoke')
-        btn_cancel = Button(text='Cancel')
-        btn_confirm.bind(on_press=confirm)
-        btn_cancel.bind(on_press=lambda i: popup.dismiss())
-        btn_layout.add_widget(btn_confirm)
-        btn_layout.add_widget(btn_cancel)
-        content.add_widget(btn_layout)
-        popup.open()
+        revoke_btn = MDRaisedButton(text='Revoke')
+        cancel_btn = MDFlatButton(text='Cancel')
+
+        revoke_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+        dialog = MDDialog(
+            title='Revoke Leases',
+            text=f'Revoke {len(self._selected_macs)} DHCP lease(s)?\nMACs: {mac_list}',
+            buttons=[revoke_btn, cancel_btn]
+        )
+        dialog.open()
 
     def go_back(self):
         self.manager.current = 'configure'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class ConfigureVlanScreen(Screen):
@@ -786,10 +811,10 @@ class ConfigureVlanScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'VLAN Configuration - {conn_name}'
+        self.ids.toolbar.title = f'VLAN Configuration - {conn_name}'
 
     def on_enter(self):
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is not None:
             self.ids.status_label.text = 'Config loaded (from previous session)'
@@ -803,7 +828,7 @@ class ConfigureVlanScreen(Screen):
         try:
             output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
             data = output.getvalue()
-            app = App.get_running_app()
+            app = MDApp.get_running_app()
             app.network_config = NetworkConfig.from_dict(json.loads(data))
             self.ids.status_label.text = 'Config loaded from router'
             self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
@@ -812,7 +837,7 @@ class ConfigureVlanScreen(Screen):
             self.show_error(f"Snapshot failed: {str(e)}")
 
     def go_to_edit(self):
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
             self.show_error("No config loaded. Take a snapshot first.")
@@ -822,7 +847,7 @@ class ConfigureVlanScreen(Screen):
 
     def commit_changes(self):
         try:
-            app = App.get_running_app()
+            app = MDApp.get_running_app()
             config = getattr(app, 'network_config', None)
             if config is None:
                 self.show_error("No config loaded. Take a snapshot first.")
@@ -833,19 +858,8 @@ class ConfigureVlanScreen(Screen):
                 self.show_error("Cannot apply - validation errors found")
                 return
 
-            content = BoxLayout(orientation='vertical', spacing=dp(10))
-            content.add_widget(Label(
-                text='Apply config changes to the router?\nThis will modify the router configuration.',
-                halign='center',
-            ))
-
-            btn_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
-            popup = Popup(title='Commit VLAN Changes',
-                          content=content,
-                          size_hint=(0.8, 0.4))
-
             def confirm(instance):
-                popup.dismiss()
+                dialog.dismiss()
                 try:
                     db = connectiondb.ConnectionDB()
                     conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
@@ -860,14 +874,18 @@ class ConfigureVlanScreen(Screen):
                     self.show_error(f"Apply failed: {str(e)}")
                     self.ids.result_text.text = f'Apply failed: {str(e)}'
 
-            btn_confirm = Button(text='Apply')
-            btn_cancel = Button(text='Cancel')
-            btn_confirm.bind(on_press=confirm)
-            btn_cancel.bind(on_press=lambda i: popup.dismiss())
-            btn_layout.add_widget(btn_confirm)
-            btn_layout.add_widget(btn_cancel)
-            content.add_widget(btn_layout)
-            popup.open()
+            apply_btn = MDRaisedButton(text='Apply')
+            cancel_btn = MDFlatButton(text='Cancel')
+
+            apply_btn.bind(on_press=confirm)
+            cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+            dialog = MDDialog(
+                title='Commit VLAN Changes',
+                text='Apply config changes to the router?\nThis will modify the router configuration.',
+                buttons=[apply_btn, cancel_btn]
+            )
+            dialog.open()
         except Exception as e:
             self.show_error(f"Commit failed: {str(e)}")
 
@@ -875,10 +893,14 @@ class ConfigureVlanScreen(Screen):
         self.manager.current = 'configure'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class VlanCanvasScreen(Screen):
@@ -896,10 +918,10 @@ class VlanCanvasScreen(Screen):
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
-        self.ids.title_label.text = f'VLANs - {conn_name}'
+        self.ids.toolbar.title = f'VLANs - {conn_name}'
 
     def refresh(self):
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
             try:
@@ -1011,7 +1033,7 @@ class VlanCanvasScreen(Screen):
         g.add(Triangle(points=[p1x, p1y, p2x, p2y, p3x, p3y]))
 
     def add_vlan(self):
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
             self.show_error("No config loaded. Snapshot or load first.")
@@ -1058,7 +1080,7 @@ class VlanCanvasScreen(Screen):
         else:
             self._connections[key] = "bidirectional"
 
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is not None:
             sync_connections_to_config(config, self._connections)
@@ -1070,7 +1092,7 @@ class VlanCanvasScreen(Screen):
         if key in self._connections:
             del self._connections[key]
 
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is not None:
             sync_connections_to_config(config, self._connections)
@@ -1149,40 +1171,35 @@ class VlanCanvasScreen(Screen):
             if k == target_key:
                 del self._touch_data[k]
 
-        content = BoxLayout(orientation='vertical', spacing=dp(10))
-        content.add_widget(Label(
-            text=f'Delete connection between\nvlan{a_id} and vlan{b_id}?',
-            halign='center',
-        ))
-
-        btn_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
-
-        popup = Popup(title='Delete Connection',
-                      content=content,
-                      size_hint=(0.8, 0.4))
-
         def confirm(instance):
+            dialog.dismiss()
             self.remove_connection(a_id, b_id)
-            popup.dismiss()
 
-        btn_confirm = Button(text='Delete')
-        btn_cancel = Button(text='Cancel')
+        delete_btn = MDRaisedButton(text='Delete')
+        cancel_btn = MDFlatButton(text='Cancel')
 
-        btn_confirm.bind(on_press=confirm)
-        btn_cancel.bind(on_press=lambda i: popup.dismiss())
-        btn_layout.add_widget(btn_confirm)
-        btn_layout.add_widget(btn_cancel)
-        content.add_widget(btn_layout)
-        popup.open()
+        delete_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+        dialog = MDDialog(
+            title='Delete Connection',
+            text=f'Delete connection between vlan{a_id} and vlan{b_id}?',
+            buttons=[delete_btn, cancel_btn]
+        )
+        dialog.open()
 
     def go_back(self):
         self.manager.current = 'configure_vlan'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
 class VlanEditScreen(Screen):
@@ -1194,7 +1211,7 @@ class VlanEditScreen(Screen):
 
     def new_vlan(self):
         self._editing_vlan = None
-        self.ids.title_label.text = 'New VLAN'
+        self.ids.toolbar.title = 'New VLAN'
         self.ids.vlan_id.text = ''
         self.ids.vlan_ip.text = '0.0.0.0'
         self.ids.vlan_netmask.text = '255.255.255.0'
@@ -1207,9 +1224,9 @@ class VlanEditScreen(Screen):
 
     def edit_vlan(self, vlan_id):
         self._editing_vlan = vlan_id
-        self.ids.title_label.text = f'Edit VLAN {vlan_id}'
+        self.ids.toolbar.title = f'Edit VLAN {vlan_id}'
 
-        app = App.get_running_app()
+        app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
             return
@@ -1229,7 +1246,7 @@ class VlanEditScreen(Screen):
 
     def save_vlan(self):
         try:
-            app = App.get_running_app()
+            app = MDApp.get_running_app()
             config = getattr(app, 'network_config', None)
             if config is None:
                 config = NetworkConfig.from_scratch()
@@ -1265,25 +1282,15 @@ class VlanEditScreen(Screen):
 
     def delete_vlan(self):
         try:
-            app = App.get_running_app()
+            app = MDApp.get_running_app()
             config = getattr(app, 'network_config', None)
             if config is None or self._editing_vlan is None:
                 return
 
             vlan_id = self._editing_vlan
 
-            content = BoxLayout(orientation='vertical', spacing=dp(10))
-            content.add_widget(Label(
-                text=f'Are you sure you want to delete\nvlan{vlan_id} and all its connections?',
-                halign='center',
-            ))
-
-            btn_layout = BoxLayout(size_hint_y=0.4, spacing=dp(10))
-            popup = Popup(title='Delete VLAN',
-                          content=content,
-                          size_hint=(0.8, 0.4))
-
             def confirm(instance):
+                dialog.dismiss()
                 config.remove_vlan(vlan_id=vlan_id)
                 restriction_keys = [
                     (r['from'], r['to'])
@@ -1293,16 +1300,19 @@ class VlanEditScreen(Screen):
                 for (f, t) in restriction_keys:
                     config.remove_restriction(from_id=f, to_id=t)
                 self.manager.current = 'vlan_canvas'
-                popup.dismiss()
 
-            btn_confirm = Button(text='Delete')
-            btn_cancel = Button(text='Cancel')
-            btn_confirm.bind(on_press=confirm)
-            btn_cancel.bind(on_press=lambda i: popup.dismiss())
-            btn_layout.add_widget(btn_confirm)
-            btn_layout.add_widget(btn_cancel)
-            content.add_widget(btn_layout)
-            popup.open()
+            delete_btn = MDRaisedButton(text='Delete')
+            cancel_btn = MDFlatButton(text='Cancel')
+
+            delete_btn.bind(on_press=confirm)
+            cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+            dialog = MDDialog(
+                title='Delete VLAN',
+                text=f'Are you sure you want to delete\nvlan{vlan_id} and all its connections?',
+                buttons=[delete_btn, cancel_btn]
+            )
+            dialog.open()
         except Exception as e:
             self.show_error(f"Failed to delete VLAN: {str(e)}")
 
@@ -1310,16 +1320,24 @@ class VlanEditScreen(Screen):
         self.manager.current = 'vlan_canvas'
 
     def show_error(self, message):
-        popup = Popup(title='Error',
-                      content=Label(text=message),
-                      size_hint=(0.8, 0.3))
-        popup.open()
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
 
 
-class WatcherApp(App):
+class WatcherApp(MDApp):
     network_config = None
 
     def build(self):
+        self.theme_cls.primary_palette = 'Gray'
+        self.theme_cls.accent_palette = 'Gray'
+        self.theme_cls.theme_style = 'Dark'
+
         sm = ScreenManager()
         sm.add_widget(ConnectionListScreen(name='connections'))
         sm.add_widget(NewConnectionScreen(name='new_connection'))
