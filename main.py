@@ -10,6 +10,11 @@ from kivymd.app import MDApp
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDRaisedButton, MDFlatButton, MDIconButton
+from kivymd.uix.tooltip import MDTooltip
+
+
+class TooltipMDIconButton(MDIconButton, MDTooltip):
+    pass
 from kivymd.uix.label import MDLabel
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.selectioncontrol import MDCheckbox
@@ -35,7 +40,7 @@ logging.getLogger('fabric').setLevel(logging.WARNING)
 
 DOUBLE_CLICK_TIMEOUT = 0.3
 LONG_PRESS_TIMEOUT = 0.5
-LINE_HIT_THRESHOLD = dp(15)
+LINE_HIT_THRESHOLD = dp(25)
 CIRCLE_RADIUS = dp(35)
 
 
@@ -169,20 +174,25 @@ class ConnectionListScreen(Screen):
             db = connectiondb.ConnectionDB()
             connections = list(db.connections.keys())
             for conn_name in connections:
-                btn = MDRaisedButton(text=conn_name,
-                                     size_hint_y=None,
-                                     size_hint_x=None,
-                                     width=dp(280),
-                                     height=dp(50),
-                                     pos_hint={'center_x': 0.5})
-                btn.bind(on_press=lambda instance, name=conn_name: self.select_connection(name))
-                self.ids.button_layout.add_widget(btn)
+                row = MDBoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+                row.add_widget(MDLabel(text=conn_name, font_style='H6'))
+                status_btn = TooltipMDIconButton(icon='magnify', tooltip_text='Status')
+                status_btn.bind(on_press=lambda instance, name=conn_name: self.show_status(name))
+                config_btn = TooltipMDIconButton(icon='cog', tooltip_text='Config')
+                config_btn.bind(on_press=lambda instance, name=conn_name: self.show_configure(name))
+                row.add_widget(status_btn)
+                row.add_widget(config_btn)
+                self.ids.button_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load connections: {str(e)}")
 
-    def select_connection(self, conn_name):
-        self.manager.get_screen('menu').set_connection(conn_name)
-        self.manager.current = 'menu'
+    def show_status(self, conn_name):
+        self.manager.get_screen('status').set_connection(conn_name)
+        self.manager.current = 'status'
+
+    def show_configure(self, conn_name):
+        self.manager.get_screen('configure').set_connection(conn_name)
+        self.manager.current = 'configure'
 
     def new_connection(self):
         self.manager.current = 'new_connection'
@@ -271,25 +281,6 @@ class NewConnectionScreen(Screen):
         dialog.open()
 
 
-class ConnectionMenuScreen(Screen):
-    connection_name = StringProperty('')
-
-    def set_connection(self, conn_name):
-        self.connection_name = conn_name
-        self.ids.toolbar.title = f'{conn_name}'
-
-    def show_status(self):
-        self.manager.get_screen('status').set_connection(self.connection_name)
-        self.manager.current = 'status'
-
-    def show_configure(self):
-        self.manager.get_screen('configure').set_connection(self.connection_name)
-        self.manager.current = 'configure'
-
-    def go_back(self):
-        self.manager.current = 'connections'
-
-
 class StatusScreen(Screen):
     connection_name = StringProperty('')
 
@@ -314,7 +305,7 @@ class StatusScreen(Screen):
         self.manager.current = 'config'
 
     def go_back(self):
-        self.manager.current = 'menu'
+        self.manager.current = 'connections'
 
 
 class ConfigureScreen(Screen):
@@ -337,7 +328,7 @@ class ConfigureScreen(Screen):
         self.manager.current = 'configure_vlan'
 
     def go_back(self):
-        self.manager.current = 'menu'
+        self.manager.current = 'connections'
 
 
 class ClientsScreen(Screen):
@@ -809,6 +800,13 @@ class ConfigureDhcpScreen(Screen):
 class ConfigureVlanScreen(Screen):
     connection_name = StringProperty('')
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._circles = {}
+        self._connections = {}
+        self._canvas_group = None
+        self._touch_data = {}
+
     def set_connection(self, conn_name):
         self.connection_name = conn_name
         self.ids.toolbar.title = f'VLAN Configuration - {conn_name}'
@@ -817,121 +815,20 @@ class ConfigureVlanScreen(Screen):
         app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is not None:
-            self.ids.status_label.text = 'Config loaded (from previous session)'
+            self.ids.status_label.text = 'Config loaded'
             self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
+            self.refresh()
         else:
             self.ids.status_label.text = 'No config loaded - take a snapshot first'
             self.ids.status_label.color = (0.8, 0.4, 0.1, 1)
-        self.ids.result_text.text = ''
-
-    def snapshot(self):
-        try:
-            output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
-            data = output.getvalue()
-            app = MDApp.get_running_app()
-            app.network_config = NetworkConfig.from_dict(json.loads(data))
-            self.ids.status_label.text = 'Config loaded from router'
-            self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
-            self.ids.result_text.text = 'Snapshot loaded successfully.\n\n' + data
-        except Exception as e:
-            self.show_error(f"Snapshot failed: {str(e)}")
-
-    def go_to_edit(self):
-        app = MDApp.get_running_app()
-        config = getattr(app, 'network_config', None)
-        if config is None:
-            self.show_error("No config loaded. Take a snapshot first.")
-            return
-        self.manager.get_screen('vlan_canvas').set_connection(self.connection_name)
-        self.manager.current = 'vlan_canvas'
-
-    def commit_changes(self):
-        try:
-            app = MDApp.get_running_app()
-            config = getattr(app, 'network_config', None)
-            if config is None:
-                self.show_error("No config loaded. Take a snapshot first.")
-                return
-            errors = config.validate()
-            if errors:
-                self.ids.result_text.text = 'Validation errors:\n' + '\n'.join(f'  - {e}' for e in errors)
-                self.show_error("Cannot apply - validation errors found")
-                return
-
-            def confirm(instance):
-                dialog.dismiss()
-                try:
-                    db = connectiondb.ConnectionDB()
-                    conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
-                    if conn is None:
-                        self.show_error("Failed to connect")
-                        return
-                    config.apply_to_router(conn, router, mode='diff')
-                    self.ids.result_text.text = 'Changes applied successfully.'
-                    self.ids.status_label.text = 'Committed to router'
-                    self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
-                except Exception as e:
-                    self.show_error(f"Apply failed: {str(e)}")
-                    self.ids.result_text.text = f'Apply failed: {str(e)}'
-
-            apply_btn = MDRaisedButton(text='Apply')
-            cancel_btn = MDFlatButton(text='Cancel')
-
-            apply_btn.bind(on_press=confirm)
-            cancel_btn.bind(on_press=lambda x: dialog.dismiss())
-
-            dialog = MDDialog(
-                title='Commit VLAN Changes',
-                text='Apply config changes to the router?\nThis will modify the router configuration.',
-                buttons=[apply_btn, cancel_btn]
-            )
-            dialog.open()
-        except Exception as e:
-            self.show_error(f"Commit failed: {str(e)}")
-
-    def go_back(self):
-        self.manager.current = 'configure'
-
-    def show_error(self, message):
-        ok_button = MDFlatButton(text='OK')
-        dialog = MDDialog(
-            title='Error',
-            text=message,
-            buttons=[ok_button]
-        )
-        ok_button.bind(on_press=lambda x: dialog.dismiss())
-        dialog.open()
-
-
-class VlanCanvasScreen(Screen):
-    connection_name = StringProperty('')
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._circles = {}
-        self._connections = {}
-        self._canvas_group = None
-        self._touch_data = {}
-
-    def on_enter(self):
-        self.refresh()
-
-    def set_connection(self, conn_name):
-        self.connection_name = conn_name
-        self.ids.toolbar.title = f'VLANs - {conn_name}'
+            self._rebuild_canvas({})
 
     def refresh(self):
         app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
-            try:
-                output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
-                data = output.getvalue()
-                config = NetworkConfig.from_dict(json.loads(data))
-                app.network_config = config
-            except Exception as e:
-                self.show_error(f"Failed to load config: {str(e)}")
-                return
+            self._rebuild_canvas({})
+            return
 
         vlans = config.network.get("vlans", {})
         restrictions = config.network.get("vlan_restrictions", [])
@@ -1036,7 +933,7 @@ class VlanCanvasScreen(Screen):
         app = MDApp.get_running_app()
         config = getattr(app, 'network_config', None)
         if config is None:
-            self.show_error("No config loaded. Snapshot or load first.")
+            self.show_error("No config loaded. Snapshot first.")
             return
 
         vlan_ids = [
@@ -1100,18 +997,15 @@ class VlanCanvasScreen(Screen):
         self._draw_lines()
 
     def on_touch_down(self, touch):
-        if super().on_touch_down(touch):
-            return True
-
         layout = self.ids.canvas_layout
         if not layout.collide_point(*touch.pos):
-            return False
+            return super().on_touch_down(touch)
 
         local_x, local_y = layout.to_local(touch.pos[0], touch.pos[1])
-        now = Clock.get_time()
 
         for vid, circle in self._circles.items():
             if circle.collide_point(local_x, local_y):
+                now = Clock.get_time()
                 target_key = ('circle', vid)
                 if target_key in self._touch_data and now - self._touch_data[target_key] < DOUBLE_CLICK_TIMEOUT:
                     self._touch_data.pop(target_key, None)
@@ -1133,36 +1027,22 @@ class VlanCanvasScreen(Screen):
                 b.center_x, b.center_y,
             )
             if dist < LINE_HIT_THRESHOLD:
+                now = Clock.get_time()
                 target_key = ('line', a_id, b_id)
                 if target_key in self._touch_data and now - self._touch_data[target_key] < DOUBLE_CLICK_TIMEOUT:
                     self._touch_data.pop(target_key, None)
-                    self.cycle_connection(a_id, b_id)
+                    self._on_long_press(a_id, b_id)
                     return True
-
-                long_press_event = Clock.schedule_once(
-                    lambda dt, ka=a_id, kb=b_id: self._on_long_press(ka, kb),
-                    LONG_PRESS_TIMEOUT,
-                )
+                self.cycle_connection(a_id, b_id)
                 self._touch_data[target_key] = now
-                touch.grab(self)
-                touch.ud['line_key'] = (a_id, b_id)
-                touch.ud['long_press'] = long_press_event
                 return True
 
-        return False
+        return super().on_touch_down(touch)
 
     def on_touch_up(self, touch):
-        if touch.grab_current is self:
-            if 'long_press' in touch.ud and touch.ud['long_press']:
-                touch.ud['long_press'].cancel()
-            touch.ungrab(self)
         return super().on_touch_up(touch)
 
     def on_touch_move(self, touch):
-        if touch.grab_current is self:
-            if 'long_press' in touch.ud and touch.ud['long_press']:
-                touch.ud['long_press'].cancel()
-            touch.ungrab(self)
         return super().on_touch_move(touch)
 
     def _on_long_press(self, a_id, b_id):
@@ -1188,8 +1068,61 @@ class VlanCanvasScreen(Screen):
         )
         dialog.open()
 
+    def snapshot(self):
+        try:
+            output = watcher.process_command(['config', 'snapshot', '--connection', self.connection_name])
+            data = output.getvalue()
+            app = MDApp.get_running_app()
+            app.network_config = NetworkConfig.from_dict(json.loads(data))
+            self.ids.status_label.text = 'Config loaded from router'
+            self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
+            self.refresh()
+        except Exception as e:
+            self.show_error(f"Snapshot failed: {str(e)}")
+
+    def commit_changes(self):
+        try:
+            app = MDApp.get_running_app()
+            config = getattr(app, 'network_config', None)
+            if config is None:
+                self.show_error("No config loaded. Take a snapshot first.")
+                return
+            errors = config.validate()
+            if errors:
+                self.show_error("Cannot apply - validation errors found:\n" + '\n'.join(f'  - {e}' for e in errors))
+                return
+
+            def confirm(instance):
+                dialog.dismiss()
+                try:
+                    db = connectiondb.ConnectionDB()
+                    conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+                    if conn is None:
+                        self.show_error("Failed to connect")
+                        return
+                    config.apply_to_router(conn, router, mode='diff')
+                    self.ids.status_label.text = 'Committed to router'
+                    self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
+                except Exception as e:
+                    self.show_error(f"Apply failed: {str(e)}")
+
+            apply_btn = MDRaisedButton(text='Apply')
+            cancel_btn = MDFlatButton(text='Cancel')
+
+            apply_btn.bind(on_press=confirm)
+            cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+
+            dialog = MDDialog(
+                title='Commit VLAN Changes',
+                text='Apply config changes to the router?\nThis will modify the router configuration.',
+                buttons=[apply_btn, cancel_btn]
+            )
+            dialog.open()
+        except Exception as e:
+            self.show_error(f"Commit failed: {str(e)}")
+
     def go_back(self):
-        self.manager.current = 'configure_vlan'
+        self.manager.current = 'configure'
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')
@@ -1276,7 +1209,7 @@ class VlanEditScreen(Screen):
                     dhcp_size=int(self.ids.vlan_dhcp_size.text or '0'),
                     dhcp_lease=int(self.ids.vlan_dhcp_lease.text or '0'),
                 )
-            self.manager.current = 'vlan_canvas'
+            self.manager.current = 'configure_vlan'
         except Exception as e:
             self.show_error(f"Failed to save VLAN: {str(e)}")
 
@@ -1299,7 +1232,7 @@ class VlanEditScreen(Screen):
                 ]
                 for (f, t) in restriction_keys:
                     config.remove_restriction(from_id=f, to_id=t)
-                self.manager.current = 'vlan_canvas'
+                self.manager.current = 'configure_vlan'
 
             delete_btn = MDRaisedButton(text='Delete')
             cancel_btn = MDFlatButton(text='Cancel')
@@ -1317,7 +1250,7 @@ class VlanEditScreen(Screen):
             self.show_error(f"Failed to delete VLAN: {str(e)}")
 
     def go_back(self):
-        self.manager.current = 'vlan_canvas'
+        self.manager.current = 'configure_vlan'
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')
@@ -1330,6 +1263,29 @@ class VlanEditScreen(Screen):
         dialog.open()
 
 
+class WatcherScreenManager(ScreenManager):
+    def on_touch_down(self, touch):
+        if self.transition.is_active:
+            return False
+        if self.current_screen:
+            return self.current_screen.on_touch_down(touch)
+        return False
+
+    def on_touch_move(self, touch):
+        if self.transition.is_active:
+            return False
+        if self.current_screen:
+            return self.current_screen.on_touch_move(touch)
+        return False
+
+    def on_touch_up(self, touch):
+        if self.transition.is_active:
+            return False
+        if self.current_screen:
+            return self.current_screen.on_touch_up(touch)
+        return False
+
+
 class WatcherApp(MDApp):
     network_config = None
 
@@ -1338,10 +1294,9 @@ class WatcherApp(MDApp):
         self.theme_cls.accent_palette = 'Gray'
         self.theme_cls.theme_style = 'Dark'
 
-        sm = ScreenManager()
+        sm = WatcherScreenManager()
         sm.add_widget(ConnectionListScreen(name='connections'))
         sm.add_widget(NewConnectionScreen(name='new_connection'))
-        sm.add_widget(ConnectionMenuScreen(name='menu'))
         sm.add_widget(StatusScreen(name='status'))
         sm.add_widget(ConfigureScreen(name='configure'))
         sm.add_widget(ClientsScreen(name='clients'))
@@ -1351,7 +1306,6 @@ class WatcherApp(MDApp):
         sm.add_widget(ConfigureStaticLeasesScreen(name='configure_static_leases'))
         sm.add_widget(ConfigureDhcpScreen(name='configure_dhcp'))
         sm.add_widget(ConfigureVlanScreen(name='configure_vlan'))
-        sm.add_widget(VlanCanvasScreen(name='vlan_canvas'))
         sm.add_widget(VlanEditScreen(name='vlan_edit'))
         return sm
 

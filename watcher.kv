@@ -120,44 +120,6 @@
                     text: 'Cancel'
                     on_press: root.go_back()
 
-<ConnectionMenuScreen>:
-    MDBoxLayout:
-        orientation: 'vertical'
-
-        MDTopAppBar:
-            id: toolbar
-            title: ''
-            left_action_items: [['arrow-left', lambda x: root.go_back()]]
-
-        MDBoxLayout:
-            orientation: 'vertical'
-            padding: dp(10)
-            spacing: dp(10)
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: dp(80)
-                spacing: dp(10)
-
-                MDRectangleFlatButton:
-                    text: 'Status'
-                    size_hint_x: 0.5
-                    on_press: root.show_status()
-
-                MDRectangleFlatButton:
-                    text: 'Configure'
-                    size_hint_x: 0.5
-                    on_press: root.show_configure()
-
-            MDLabel:
-                id: info_label
-                text: 'Select View or Configure to manage this connection'
-                size_hint_y: None
-                height: dp(30)
-                font_style: 'Caption'
-                theme_text_color: 'Secondary'
-                halign: 'center'
-
 <StatusScreen>:
     MDBoxLayout:
         orientation: 'vertical'
@@ -585,10 +547,14 @@
             title: ''
             left_action_items: [['arrow-left', lambda x: root.go_back()]]
 
+        FloatLayout:
+            id: canvas_layout
+            size_hint_y: 3.0
+
         MDBoxLayout:
             orientation: 'vertical'
             padding: dp(10)
-            spacing: dp(10)
+            spacing: dp(8)
 
             MDLabel:
                 id: status_label
@@ -601,66 +567,20 @@
 
             MDBoxLayout:
                 size_hint_y: None
-                height: dp(100)
+                height: dp(48)
                 spacing: dp(10)
 
                 MDRaisedButton:
-                    text: 'Snapshot\nfrom Router'
+                    text: 'Snapshot'
                     on_press: root.snapshot()
-
-                MDRectangleFlatButton:
-                    text: 'Edit VLANs'
-                    on_press: root.go_to_edit()
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: dp(48)
-                spacing: dp(10)
-
-                MDRaisedButton:
-                    text: 'Commit Changes'
-                    on_press: root.commit_changes()
-
-                MDFlatButton:
-                    text: 'Back'
-                    on_press: root.go_back()
-
-            MDTextField:
-                id: result_text
-                size_hint_y: 0.19
-                readonly: True
-                multiline: True
-
-<VlanCanvasScreen>:
-    MDBoxLayout:
-        orientation: 'vertical'
-
-        MDTopAppBar:
-            id: toolbar
-            title: ''
-            left_action_items: [['arrow-left', lambda x: root.go_back()]]
-
-        MDBoxLayout:
-            orientation: 'vertical'
-            padding: dp(10)
-            spacing: dp(10)
-
-            FloatLayout:
-                id: canvas_layout
-                size_hint_y: 0.82
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: dp(48)
-                spacing: dp(10)
 
                 MDIconButton:
                     icon: 'plus'
                     on_press: root.add_vlan()
 
                 MDRaisedButton:
-                    text: 'Refresh'
-                    on_press: root.refresh()
+                    text: 'Commit'
+                    on_press: root.commit_changes()
 
                 MDFlatButton:
                     text: 'Back'

@@ -147,6 +147,7 @@ class NetworkConfig:
                     if vlan_id in vlan_list:
                         members.append(port)
                 config.network["vlans"][vlan_name]["members"] = members
+        config._resolve_bridged_vlans()
         config.dhcp["static_leases"] = router.get_static_leases(conn)
         raw_rules = router.get_firewall_rules(conn)
         restrictions = []
@@ -198,6 +199,28 @@ class NetworkConfig:
         self.dhcp.setdefault("static_leases", [])
         for vlan_name in self.network["vlans"]:
             self.network["vlans"][vlan_name].setdefault("members", [])
+
+    def _resolve_bridged_vlans(self):
+        """For bridged VLANs with 0.0.0.0 IP, resolve effective IP/netmask/DHCP from their bridge."""
+        bridges = self.network.get("bridges", {})
+        bridge_for_vlan = {}
+        for bridge_name, bridge_data in bridges.items():
+            for member in bridge_data.get("members", []):
+                if member.startswith("vlan"):
+                    bridge_for_vlan[member] = (bridge_name, bridge_data)
+
+        for vlan_name, vlan_data in self.network.get("vlans", {}).items():
+            if not vlan_data.get("bridged", False):
+                continue
+            if vlan_name not in bridge_for_vlan:
+                continue
+            bridge_name, bridge_data = bridge_for_vlan[vlan_name]
+            if vlan_data.get("ip") == "0.0.0.0" and bridge_data.get("ip"):
+                vlan_data["ip"] = bridge_data["ip"]
+            if vlan_data.get("netmask") == "0.0.0.0" and bridge_data.get("netmask"):
+                vlan_data["netmask"] = bridge_data["netmask"]
+            if "dhcp" not in vlan_data and "dhcp" in bridge_data:
+                vlan_data["dhcp"] = copy.deepcopy(bridge_data["dhcp"])
 
     def to_dict(self) -> Dict[str, Any]:
         self._normalize()
