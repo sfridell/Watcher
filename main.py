@@ -179,7 +179,7 @@ class ConnectionListScreen(Screen):
             for conn_name in connections:
                 row = MDBoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
                 row.add_widget(MDLabel(text=conn_name, font_style='H6'))
-                status_btn = TooltipMDIconButton(icon='magnify', tooltip_text='Status')
+                status_btn = TooltipMDIconButton(icon='eye', tooltip_text='Status')
                 status_btn.bind(on_press=lambda instance, name=conn_name: self.show_status(name))
                 config_btn = TooltipMDIconButton(icon='cog', tooltip_text='Config')
                 config_btn.bind(on_press=lambda instance, name=conn_name: self.show_configure(name))
@@ -270,8 +270,12 @@ class NewConnectionScreen(Screen):
         except Exception as e:
             self.show_error(f"Failed to create connection: {str(e)}")
 
+    def show_leases(self):
+        self.manager.get_screen('leases').set_connection(self.connection_name)
+        self.manager.current = 'leases'
+
     def go_back(self):
-        self.manager.current = 'connections'
+        self.manager.current = 'configure'
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')
@@ -311,6 +315,10 @@ class StatusScreen(Screen):
         self.manager.get_screen('vpn_status').set_connection(self.connection_name)
         self.manager.current = 'vpn_status'
 
+    def show_configure(self):
+        self.manager.get_screen('configure').set_connection(self.connection_name)
+        self.manager.current = 'configure'
+
     def go_back(self):
         self.manager.current = 'connections'
 
@@ -337,6 +345,10 @@ class ConfigureScreen(Screen):
     def show_vpn_config(self):
         self.manager.get_screen('vpn_config_list').set_connection(self.connection_name)
         self.manager.current = 'vpn_config_list'
+
+    def show_status(self):
+        self.manager.get_screen('status').set_connection(self.connection_name)
+        self.manager.current = 'status'
 
     def go_back(self):
         self.manager.current = 'connections'
@@ -369,6 +381,10 @@ class ClientsScreen(Screen):
                         self.ids.data_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load clients: {str(e)}")
+
+    def show_dhcp_revoke(self):
+        self.manager.get_screen('configure_dhcp').set_connection(self.connection_name)
+        self.manager.current = 'configure_dhcp'
 
     def go_back(self):
         self.manager.current = 'status'
@@ -411,6 +427,10 @@ class StaticLeasesScreen(Screen):
                         self.ids.data_layout.add_widget(row)
         except Exception as e:
             self.show_error(f"Failed to load leases: {str(e)}")
+
+    def show_configure_leases(self):
+        self.manager.get_screen('configure_static_leases').set_connection(self.connection_name)
+        self.manager.current = 'configure_static_leases'
 
     def go_back(self):
         self.manager.current = 'status'
@@ -582,6 +602,10 @@ class VlanListScreen(Screen):
         p3y = at_y - size * math.sin(angle + 0.5)
         g.add(Color(*color))
         g.add(Triangle(points=[p1x, p1y, p2x, p2y, p3x, p3y]))
+
+    def show_configure(self):
+        self.manager.get_screen('configure_vlan').set_connection(self.connection_name)
+        self.manager.current = 'configure_vlan'
 
     def go_back(self):
         self.manager.current = 'status'
@@ -793,6 +817,10 @@ class ConfigureDhcpScreen(Screen):
             buttons=[revoke_btn, cancel_btn]
         )
         dialog.open()
+
+    def show_clients(self):
+        self.manager.get_screen('clients').set_connection(self.connection_name)
+        self.manager.current = 'clients'
 
     def go_back(self):
         self.manager.current = 'configure'
@@ -1261,7 +1289,7 @@ class VlanEditScreen(Screen):
             self.show_error(f"Failed to delete VLAN: {str(e)}")
 
     def go_back(self):
-        self.manager.current = 'configure_vlan'
+        self.manager.current = 'configure'
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')
@@ -1318,6 +1346,10 @@ class VpnStatusScreen(Screen):
             self.ids.status_text.text = '\n'.join(lines) if lines else 'No VPN status available'
         except Exception as e:
             self.ids.status_text.text = f'Error: {str(e)}'
+
+    def show_vpn_config(self):
+        self.manager.get_screen('vpn_config_list').set_connection(self.connection_name)
+        self.manager.current = 'vpn_config_list'
 
     def go_back(self):
         self.manager.current = 'status'
@@ -1452,6 +1484,10 @@ class VpnConfigListScreen(Screen):
             buttons=[delete_btn, cancel_btn]
         )
         dialog.open()
+
+    def show_vpn_status(self):
+        self.manager.get_screen('vpn_status').set_connection(self.connection_name)
+        self.manager.current = 'vpn_status'
 
     def go_back(self):
         self.manager.current = 'configure'
@@ -1646,8 +1682,12 @@ class VpnConfigEditScreen(Screen):
             return
         self._load_ovpn(filepath)
 
+    def show_vlans(self):
+        self.manager.get_screen('vlan_list').set_connection(self.connection_name)
+        self.manager.current = 'vlan_list'
+
     def go_back(self):
-        self.manager.current = 'vpn_config_list'
+        self.manager.current = 'configure'
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')
