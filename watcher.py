@@ -10,6 +10,7 @@ import re
 import json
 from tabulate import tabulate
 from networkconfig import NetworkConfig
+from vpnconfig import parse_ovpn_file, get_ddwrt_nvram_from_config
 
 logging.getLogger('paramiko').setLevel(logging.WARNING)
 logging.getLogger('invoke').setLevel(logging.WARNING)
@@ -316,6 +317,135 @@ def port_unassign(args, connections, output):
     print(f'Port {args.port} unassigned from VLAN {args.vlan}', file=output)
 
 
+def vpn_status(args, connections, output):
+    """Display VPN connection status for a router."""
+    conn, router = connections.get_connection_with_handler(args.connection, output)
+    if conn is None:
+        return
+    status = router.get_vpn_status(conn)
+    headers = ['Field', 'Value']
+    rows = [
+        ['Enabled', 'Yes' if status.get('enabled') else 'No'],
+        ['Connected', 'Yes' if status.get('connected') else 'No'],
+        ['Remote', status.get('remote', '')],
+        ['Port', status.get('port', '')],
+        ['Protocol', status.get('proto', '')],
+        ['Interface', status.get('interface', '')],
+    ]
+    print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
+
+
+def vpn_config_show(args, connections, output):
+    """Display the active VPN configuration on a router."""
+    conn, router = connections.get_connection_with_handler(args.connection, output)
+    if conn is None:
+        return
+    config = router.get_vpn_config(conn)
+    if not config:
+        print('No VPN configuration found on router.', file=output)
+        return
+    for key, value in sorted(config.items()):
+        if value:
+            print(f'{key}: {value}', file=output)
+
+
+def vpn_config_apply(args, connections, output):
+    """Apply a VPN configuration to the router. Reads from an .ovpn file or stored config."""
+    db = connectiondb.ConnectionDB()
+    if args.config_name:
+        vpn_configs = db.get_vpn_configs(args.connection)
+        if args.config_name not in vpn_configs:
+            print(f'VPN config "{args.config_name}" not found for connection "{args.connection}"', file=output)
+            return
+        vpn_config = vpn_configs[args.config_name]
+    elif args.ovpn_file:
+        parsed = parse_ovpn_file(args.ovpn_file)
+        vpn_config = get_ddwrt_nvram_from_config(parsed)
+    else:
+        print('Either --config-name or --ovpn-file must be specified', file=output)
+        return
+
+    conn, router = connections.get_connection_with_handler(args.connection, output)
+    if conn is None:
+        return
+    try:
+        router.apply_vpn_config(conn, vpn_config)
+    except Exception as e:
+        print(f'Failed to apply VPN config: {e}', file=output)
+        return
+    print(f'VPN config applied to {args.connection}', file=output)
+    if args.start:
+        try:
+            router.start_vpn(conn)
+            print('VPN started.', file=output)
+        except Exception as e:
+            print(f'Failed to start VPN: {e}', file=output)
+
+
+def vpn_start(args, connections, output):
+    """Start the VPN client on a router."""
+    conn, router = connections.get_connection_with_handler(args.connection, output)
+    if conn is None:
+        return
+    try:
+        router.start_vpn(conn)
+        print(f'VPN started on {args.connection}', file=output)
+    except Exception as e:
+        print(f'Failed to start VPN: {e}', file=output)
+    db = connectiondb.ConnectionDB()
+    if args.config_name:
+        db.set_active_vpn(args.connection, args.config_name)
+
+
+def vpn_stop(args, connections, output):
+    """Stop the VPN client on a router."""
+    conn, router = connections.get_connection_with_handler(args.connection, output)
+    if conn is None:
+        return
+    try:
+        router.stop_vpn(conn)
+        print(f'VPN stopped on {args.connection}', file=output)
+    except Exception as e:
+        print(f'Failed to stop VPN: {e}', file=output)
+
+
+def vpn_config_import(args, connections, output):
+    """Import an .ovpn file and store it as a named VPN config for a connection."""
+    parsed = parse_ovpn_file(args.ovpn_file)
+    db = connectiondb.ConnectionDB()
+    db.add_vpn_config(args.connection, args.name, parsed)
+    db.set_active_vpn(args.connection, args.name)
+    print(f'VPN config "{args.name}" imported for connection "{args.connection}"', file=output)
+
+
+def vpn_config_list(args, connections, output):
+    """List stored VPN configs for a connection."""
+    db = connectiondb.ConnectionDB()
+    vpn_configs = db.get_vpn_configs(args.connection)
+    active = db.get_active_vpn(args.connection)
+    if not vpn_configs:
+        print(f'No VPN configs stored for connection "{args.connection}"', file=output)
+        return
+    headers = ['Name', 'Active', 'Server', 'Port', 'Proto']
+    rows = []
+    for name, config in vpn_configs.items():
+        rows.append([
+            name,
+            '*' if name == active else '',
+            config.get('remote', ''),
+            config.get('port', ''),
+            config.get('proto', ''),
+        ])
+    print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
+
+
+def vpn_config_delete(args, connections, output):
+    """Delete a stored VPN config by name."""
+    db = connectiondb.ConnectionDB()
+    db.delete_vpn_config(args.connection, args.name)
+    print(f'VPN config "{args.name}" deleted from connection "{args.connection}"', file=output)
+
+
 def vlan_restrict(args, connections, output):
     """Add a VLAN routing restriction to a local config file and save it."""
     config = NetworkConfig.from_json_file(args.file)
@@ -482,6 +612,32 @@ def get_args(argv=sys.argv[1:]):
     port_unassign_cmd.add_argument("--port", type=str, required=True)
     port_unassign_cmd.add_argument("--vlan", type=int, required=True)
 
+    parser_vpn = subparsers.add_parser('vpn')
+    vpn_commands = parser_vpn.add_subparsers(dest='vpn_command')
+    vpn_status_cmd = vpn_commands.add_parser('status')
+    vpn_status_cmd.add_argument("--connection", type=str, required=True)
+    vpn_show_cmd = vpn_commands.add_parser('show')
+    vpn_show_cmd.add_argument("--connection", type=str, required=True)
+    vpn_apply_cmd = vpn_commands.add_parser('apply')
+    vpn_apply_cmd.add_argument("--connection", type=str, required=True)
+    vpn_apply_cmd.add_argument("--config-name", type=str, default=None)
+    vpn_apply_cmd.add_argument("--ovpn-file", type=str, default=None)
+    vpn_apply_cmd.add_argument("--start", action="store_true", default=False)
+    vpn_start_cmd = vpn_commands.add_parser('start')
+    vpn_start_cmd.add_argument("--connection", type=str, required=True)
+    vpn_start_cmd.add_argument("--config-name", type=str, default=None)
+    vpn_stop_cmd = vpn_commands.add_parser('stop')
+    vpn_stop_cmd.add_argument("--connection", type=str, required=True)
+    vpn_import_cmd = vpn_commands.add_parser('import')
+    vpn_import_cmd.add_argument("--connection", type=str, required=True)
+    vpn_import_cmd.add_argument("--name", type=str, required=True)
+    vpn_import_cmd.add_argument("--ovpn-file", type=str, required=True)
+    vpn_list_cmd = vpn_commands.add_parser('list')
+    vpn_list_cmd.add_argument("--connection", type=str, required=True)
+    vpn_delete_cmd = vpn_commands.add_parser('delete')
+    vpn_delete_cmd.add_argument("--connection", type=str, required=True)
+    vpn_delete_cmd.add_argument("--name", type=str, required=True)
+
     return parser.parse_args(argv)
 
 
@@ -546,6 +702,23 @@ def process_command(argv=sys.argv[1:]):
             port_assign(args, connections, output)
         elif args.port_command == 'unassign':
             port_unassign(args, connections, output)
+    elif args.command == 'vpn':
+        if args.vpn_command == 'status':
+            vpn_status(args, connections, output)
+        elif args.vpn_command == 'show':
+            vpn_config_show(args, connections, output)
+        elif args.vpn_command == 'apply':
+            vpn_config_apply(args, connections, output)
+        elif args.vpn_command == 'start':
+            vpn_start(args, connections, output)
+        elif args.vpn_command == 'stop':
+            vpn_stop(args, connections, output)
+        elif args.vpn_command == 'import':
+            vpn_config_import(args, connections, output)
+        elif args.vpn_command == 'list':
+            vpn_config_list(args, connections, output)
+        elif args.vpn_command == 'delete':
+            vpn_config_delete(args, connections, output)
 
     return output
 

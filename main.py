@@ -24,6 +24,8 @@ from kivymd.uix.toolbar import MDTopAppBar  # noqa: F401 - used in KV
 from kivy.uix.spinner import Spinner  # noqa: F401 - used in KV
 from kivy.uix.scrollview import ScrollView  # noqa: F401 - used in KV
 from kivy.uix.floatlayout import FloatLayout  # noqa: F401 - used in KV
+from kivy.uix.popup import Popup  # noqa: F401 - used in KV
+from kivy.uix.filechooser import FileChooserListView  # noqa: F401 - used in KV
 from kivy.metrics import dp
 from kivy.properties import StringProperty, NumericProperty
 from kivy.graphics import Color, Line, Ellipse, Triangle, InstructionGroup
@@ -31,6 +33,7 @@ from kivy.clock import Clock
 import watcher
 import connectiondb
 from networkconfig import NetworkConfig
+from vpnconfig import parse_ovpn_file, get_ddwrt_nvram_from_config, config_summary
 
 logging.getLogger('paramiko').setLevel(logging.WARNING)
 logging.getLogger('invoke').setLevel(logging.WARNING)
@@ -304,6 +307,10 @@ class StatusScreen(Screen):
         self.manager.get_screen('config').set_connection(self.connection_name)
         self.manager.current = 'config'
 
+    def show_vpn_status(self):
+        self.manager.get_screen('vpn_status').set_connection(self.connection_name)
+        self.manager.current = 'vpn_status'
+
     def go_back(self):
         self.manager.current = 'connections'
 
@@ -326,6 +333,10 @@ class ConfigureScreen(Screen):
     def show_vlan_config(self):
         self.manager.get_screen('configure_vlan').set_connection(self.connection_name)
         self.manager.current = 'configure_vlan'
+
+    def show_vpn_config(self):
+        self.manager.get_screen('vpn_config_list').set_connection(self.connection_name)
+        self.manager.current = 'vpn_config_list'
 
     def go_back(self):
         self.manager.current = 'connections'
@@ -1263,6 +1274,391 @@ class VlanEditScreen(Screen):
         dialog.open()
 
 
+class VpnStatusScreen(Screen):
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.toolbar.title = f'VPN Status - {conn_name}'
+
+    def on_enter(self):
+        self.load_status()
+
+    def load_status(self):
+        try:
+            db = connectiondb.ConnectionDB()
+            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+            if conn is None:
+                self.ids.status_text.text = 'Failed to connect'
+                return
+            status = router.get_vpn_status(conn)
+            active_vpn = db.get_active_vpn(self.connection_name)
+            vpn_configs = db.get_vpn_configs(self.connection_name)
+            active_config = vpn_configs.get(active_vpn, {})
+
+            lines = []
+            connected = status.get('connected', False)
+            status_str = 'Connected' if connected else 'Disconnected'
+            lines.append(f'Status: {status_str}')
+            lines.append(f'Enabled: {"Yes" if status.get("enabled") else "No"}')
+            if active_vpn:
+                lines.append(f'Active Config: {active_vpn}')
+            if status.get('remote'):
+                lines.append(f'Remote: {status["remote"]}')
+            if status.get('port'):
+                lines.append(f'Port: {status["port"]}')
+            if status.get('proto'):
+                lines.append(f'Protocol: {status["proto"]}')
+            if status.get('interface'):
+                lines.append(f'Interface: {status["interface"]}')
+            if active_config:
+                summary = config_summary(active_config)
+                for key, value in summary.items():
+                    lines.append(f'{key}: {value}')
+            self.ids.status_text.text = '\n'.join(lines) if lines else 'No VPN status available'
+        except Exception as e:
+            self.ids.status_text.text = f'Error: {str(e)}'
+
+    def toggle_vpn(self):
+        try:
+            db = connectiondb.ConnectionDB()
+            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+            if conn is None:
+                self.show_error('Failed to connect')
+                return
+            status = router.get_vpn_status(conn)
+            if status.get('connected'):
+                router.stop_vpn(conn)
+            else:
+                self.apply_and_start(router, conn, db)
+            self.load_status()
+        except Exception as e:
+            self.show_error(f'Failed: {str(e)}')
+
+    def apply_and_start(self, router, conn, db):
+        active_vpn = db.get_active_vpn(self.connection_name)
+        if not active_vpn:
+            self.show_error('No VPN config selected. Set an active config first.')
+            return
+        vpn_configs = db.get_vpn_configs(self.connection_name)
+        vpn_config = vpn_configs.get(active_vpn)
+        if not vpn_config:
+            self.show_error(f'VPN config "{active_vpn}" not found.')
+            return
+        nvram_config = get_ddwrt_nvram_from_config(vpn_config)
+        router.apply_vpn_config(conn, nvram_config)
+        router.start_vpn(conn)
+
+    def go_back(self):
+        self.manager.current = 'status'
+
+    def show_error(self, message):
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
+
+
+class VpnConfigListScreen(Screen):
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.toolbar.title = f'VPN Configs - {conn_name}'
+
+    def on_enter(self):
+        self.load_configs()
+
+    def load_configs(self):
+        try:
+            self.ids.config_layout.clear_widgets()
+            db = connectiondb.ConnectionDB()
+            vpn_configs = db.get_vpn_configs(self.connection_name)
+            active_vpn = db.get_active_vpn(self.connection_name)
+            if not vpn_configs:
+                self.ids.status_label.text = 'No VPN configs found. Add one below.'
+                return
+            self.ids.status_label.text = f'{len(vpn_configs)} config(s) found'
+            for name, config in vpn_configs.items():
+                row = MDBoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+                label_text = name
+                if name == active_vpn:
+                    label_text += ' *'
+                row.add_widget(MDLabel(text=label_text, font_style='H6', size_hint_x=0.4))
+                summary = config_summary(config)
+                detail = ', '.join(f'{k}: {v}' for k, v in summary.items())
+                row.add_widget(MDLabel(text=detail, font_style='Caption', size_hint_x=0.35))
+
+                activate_btn = TooltipMDIconButton(icon='check-circle', tooltip_text='Set Active')
+                activate_btn.bind(on_press=lambda instance, n=name: self.activate_config(n))
+                row.add_widget(activate_btn)
+
+                edit_btn = TooltipMDIconButton(icon='pencil', tooltip_text='Edit')
+                edit_btn.bind(on_press=lambda instance, n=name: self.edit_config(n))
+                row.add_widget(edit_btn)
+
+                delete_btn = TooltipMDIconButton(icon='delete', tooltip_text='Delete')
+                delete_btn.bind(on_press=lambda instance, n=name: self.delete_config(n))
+                row.add_widget(delete_btn)
+                self.ids.config_layout.add_widget(row)
+        except Exception as e:
+            self.show_error(f'Failed to load configs: {str(e)}')
+
+    def activate_config(self, name):
+        try:
+            db = connectiondb.ConnectionDB()
+            db.set_active_vpn(self.connection_name, name)
+            self.load_configs()
+        except Exception as e:
+            self.show_error(f'Failed to activate: {str(e)}')
+
+    def add_config(self):
+        self.manager.get_screen('vpn_config_edit').set_connection(self.connection_name)
+        self.manager.get_screen('vpn_config_edit').new_config()
+        self.manager.current = 'vpn_config_edit'
+
+    def import_ovpn(self):
+        self.manager.get_screen('vpn_config_edit').set_connection(self.connection_name)
+        self.manager.get_screen('vpn_config_edit').show_file_chooser()
+        self.manager.current = 'vpn_config_edit'
+
+    def edit_config(self, name):
+        self.manager.get_screen('vpn_config_edit').set_connection(self.connection_name)
+        self.manager.get_screen('vpn_config_edit').edit_config(name)
+        self.manager.current = 'vpn_config_edit'
+
+    def delete_config(self, name):
+        def confirm(instance):
+            dialog.dismiss()
+            try:
+                db = connectiondb.ConnectionDB()
+                db.delete_vpn_config(self.connection_name, name)
+                self.load_configs()
+            except Exception as e:
+                self.show_error(f'Failed to delete: {str(e)}')
+
+        delete_btn = MDRaisedButton(text='Delete')
+        cancel_btn = MDFlatButton(text='Cancel')
+        delete_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+        dialog = MDDialog(
+            title='Delete VPN Config',
+            text=f'Delete VPN config "{name}"?',
+            buttons=[delete_btn, cancel_btn]
+        )
+        dialog.open()
+
+    def go_back(self):
+        self.manager.current = 'configure'
+
+    def show_error(self, message):
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
+
+
+class VpnConfigEditScreen(Screen):
+    connection_name = StringProperty('')
+    _editing_config = None
+    _ovpn_content = None
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+
+    def new_config(self):
+        self._editing_config = None
+        self._ovpn_content = None
+        self.ids.toolbar.title = 'New VPN Config'
+        self._clear_fields()
+
+    def edit_config(self, name):
+        self._editing_config = name
+        self._ovpn_content = None
+        self.ids.toolbar.title = f'Edit VPN - {name}'
+        try:
+            db = connectiondb.ConnectionDB()
+            vpn_configs = db.get_vpn_configs(self.connection_name)
+            config = vpn_configs.get(name, {})
+            self._clear_fields()
+            self.ids.vpn_name.text = name
+            self.ids.vpn_remote.text = config.get('remote', '')
+            self.ids.vpn_port.text = config.get('port', '1194')
+            self.ids.vpn_proto.text = config.get('proto', 'udp')
+            self.ids.vpn_dev.text = config.get('dev', 'tun0')
+            self.ids.vpn_cipher.text = config.get('cipher', '')
+            self.ids.vpn_auth.text = config.get('auth', '')
+            self.ids.vpn_complzo.text = config.get('comp-lzo', 'no')
+            self.ids.vpn_username.text = config.get('username', '')
+            self.ids.vpn_password.text = config.get('password', '')
+            self.ids.vpn_ca.text = config.get('ca', '')
+            self.ids.vpn_cert.text = config.get('cert', '')
+            self.ids.vpn_key.text = config.get('key', '')
+        except Exception as e:
+            self.show_error(f'Failed to load config: {str(e)}')
+
+    def _clear_fields(self):
+        self.ids.vpn_name.text = ''
+        self.ids.vpn_remote.text = ''
+        self.ids.vpn_port.text = '1194'
+        self.ids.vpn_proto.text = 'udp'
+        self.ids.vpn_dev.text = 'tun0'
+        self.ids.vpn_cipher.text = ''
+        self.ids.vpn_auth.text = ''
+        self.ids.vpn_complzo.text = 'no'
+        self.ids.vpn_username.text = ''
+        self.ids.vpn_password.text = ''
+        self.ids.vpn_ca.text = ''
+        self.ids.vpn_cert.text = ''
+        self.ids.vpn_key.text = ''
+
+    def show_file_chooser(self):
+        content = MDBoxLayout(orientation='vertical', spacing=dp(10), padding=dp(10))
+        file_chooser = FileChooserListView(dirselect=False)
+        file_chooser.path = '.'
+        file_chooser.filters = ['*.ovpn']
+        content.add_widget(file_chooser)
+
+        select_btn = MDRaisedButton(text='Select')
+        cancel_btn = MDFlatButton(text='Cancel')
+
+        popup = Popup(
+            title='Select .ovpn File',
+            content=content,
+            size_hint=(0.9, 0.9),
+        )
+
+        def on_select(instance):
+            if file_chooser.selection:
+                filepath = file_chooser.selection[0]
+                popup.dismiss()
+                self._load_ovpn(filepath)
+
+        select_btn.bind(on_press=on_select)
+        cancel_btn.bind(on_press=lambda x: popup.dismiss())
+
+        btn_row = MDBoxLayout(size_hint_y=None, height=dp(48), spacing=dp(10))
+        btn_row.add_widget(select_btn)
+        btn_row.add_widget(cancel_btn)
+        content.add_widget(btn_row)
+
+        content.popup = popup
+        popup.open()
+
+    def _load_ovpn(self, filepath):
+        try:
+            parsed = parse_ovpn_file(filepath)
+            self._ovpn_content = parsed
+            self._clear_fields()
+            if self._editing_config is None:
+                import os
+                self.ids.vpn_name.text = os.path.splitext(os.path.basename(filepath))[0]
+            if 'remote' in parsed:
+                self.ids.vpn_remote.text = parsed['remote']
+            if 'port' in parsed:
+                self.ids.vpn_port.text = parsed['port']
+            if 'proto' in parsed:
+                self.ids.vpn_proto.text = parsed['proto']
+            if 'dev' in parsed:
+                self.ids.vpn_dev.text = parsed['dev']
+            if 'cipher' in parsed:
+                self.ids.vpn_cipher.text = parsed['cipher']
+            if 'auth' in parsed:
+                self.ids.vpn_auth.text = parsed['auth']
+            if 'comp-lzo' in parsed:
+                self.ids.vpn_complzo.text = parsed['comp-lzo']
+            if 'auth-user-pass' in parsed:
+                pass
+            if 'ca' in parsed:
+                self.ids.vpn_ca.text = parsed['ca']
+            if 'cert' in parsed:
+                self.ids.vpn_cert.text = parsed['cert']
+            if 'key' in parsed:
+                self.ids.vpn_key.text = parsed['key']
+            self.ids.status_label.text = f'Loaded: {filepath}'
+            self.ids.status_label.color = (0.2, 0.7, 0.2, 1)
+        except Exception as e:
+            self.show_error(f'Failed to parse .ovpn file: {str(e)}')
+
+    def save_config(self):
+        try:
+            name = self.ids.vpn_name.text.strip()
+            if not name:
+                self.show_error('Config name is required')
+                return
+            config = {}
+            if self.ids.vpn_remote.text.strip():
+                config['remote'] = self.ids.vpn_remote.text.strip()
+            if self.ids.vpn_port.text.strip():
+                config['port'] = self.ids.vpn_port.text.strip()
+            if self.ids.vpn_proto.text.strip():
+                config['proto'] = self.ids.vpn_proto.text.strip()
+            if self.ids.vpn_dev.text.strip():
+                config['dev'] = self.ids.vpn_dev.text.strip()
+            if self.ids.vpn_cipher.text.strip():
+                config['cipher'] = self.ids.vpn_cipher.text.strip()
+            if self.ids.vpn_auth.text.strip():
+                config['auth'] = self.ids.vpn_auth.text.strip()
+            if self.ids.vpn_complzo.text.strip():
+                config['comp-lzo'] = self.ids.vpn_complzo.text.strip()
+            if self.ids.vpn_username.text.strip():
+                config['username'] = self.ids.vpn_username.text.strip()
+                config['auth-user-pass'] = 'true'
+            if self.ids.vpn_password.text.strip():
+                config['password'] = self.ids.vpn_password.text.strip()
+            if self.ids.vpn_ca.text.strip():
+                config['ca'] = self.ids.vpn_ca.text.strip()
+            if self.ids.vpn_cert.text.strip():
+                config['cert'] = self.ids.vpn_cert.text.strip()
+            if self.ids.vpn_key.text.strip():
+                config['key'] = self.ids.vpn_key.text.strip()
+            if self._ovpn_content:
+                for key in ('key-direction', 'tls-auth', 'tls-crypt', 'resolv-retry',
+                            'remote-cert-tls', 'keepalive', 'mssfix', 'mtu',
+                            'tun-mtu', 'fragment', 'nobind', 'persist-key',
+                            'persist-tun', 'verb', 'tls-version-min', 'dh',
+                            'secret', 'crl-verify', 'pkcs12'):
+                    if key in self._ovpn_content:
+                        config[key] = self._ovpn_content[key]
+
+            db = connectiondb.ConnectionDB()
+            db.add_vpn_config(self.connection_name, name, config)
+            if self._editing_config is None:
+                db.set_active_vpn(self.connection_name, name)
+            self.manager.get_screen('vpn_config_list').set_connection(self.connection_name)
+            self.manager.current = 'vpn_config_list'
+        except Exception as e:
+            self.show_error(f'Failed to save config: {str(e)}')
+
+    def load_ovpn_from_path(self):
+        filepath = self.ids.ovpn_path.text.strip()
+        if not filepath:
+            self.show_error('Enter a file path or use the file chooser')
+            return
+        self._load_ovpn(filepath)
+
+    def go_back(self):
+        self.manager.current = 'vpn_config_list'
+
+    def show_error(self, message):
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(
+            title='Error',
+            text=message,
+            buttons=[ok_button]
+        )
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
+
+
 class WatcherScreenManager(ScreenManager):
     def on_touch_down(self, touch):
         if self.transition.is_active:
@@ -1307,6 +1703,9 @@ class WatcherApp(MDApp):
         sm.add_widget(ConfigureDhcpScreen(name='configure_dhcp'))
         sm.add_widget(ConfigureVlanScreen(name='configure_vlan'))
         sm.add_widget(VlanEditScreen(name='vlan_edit'))
+        sm.add_widget(VpnStatusScreen(name='vpn_status'))
+        sm.add_widget(VpnConfigListScreen(name='vpn_config_list'))
+        sm.add_widget(VpnConfigEditScreen(name='vpn_config_edit'))
         return sm
 
 

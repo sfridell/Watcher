@@ -341,3 +341,79 @@ class DDWRTRouter(RouterBase):
         new_rc = "\n".join(lines)
         conn.run(f"nvram set rc_firewall='{new_rc}'", hide=True)
         conn.run("nvram commit", hide=True)
+
+    def get_vpn_status(self, conn) -> Dict[str, Any]:
+        status = {
+            "enabled": False,
+            "connected": False,
+            "remote": "",
+            "port": "",
+            "proto": "",
+            "interface": "",
+        }
+        result = conn.run("nvram get openvpncl_enable", hide=True)
+        if result.exited == 0 and result.stdout.strip() == "1":
+            status["enabled"] = True
+        result = conn.run("ip link show tun0 2>/dev/null", hide=True, warn=True)
+        if result.exited == 0 and "UP" in result.stdout:
+            status["connected"] = True
+            status["interface"] = "tun0"
+        elif result.exited == 0 and result.stdout.strip():
+            for line in result.stdout.splitlines():
+                m = re.match(r'\d+:\s+(\S+):.*UP', line)
+                if m:
+                    status["connected"] = True
+                    status["interface"] = m.group(1)
+                    break
+        if status["enabled"]:
+            result = conn.run("nvram get openvpncl_remoteip", hide=True, warn=True)
+            if result.exited == 0:
+                status["remote"] = result.stdout.strip()
+            result = conn.run("nvram get openvpncl_remoteport", hide=True, warn=True)
+            if result.exited == 0:
+                status["port"] = result.stdout.strip()
+            result = conn.run("nvram get openvpncl_proto", hide=True, warn=True)
+            if result.exited == 0:
+                status["proto"] = result.stdout.strip()
+        return status
+
+    def get_vpn_config(self, conn) -> Dict[str, str]:
+        config = {}
+        keys = [
+            "openvpncl_enable", "openvpncl_remoteip", "openvpncl_remoteport",
+            "openvpncl_proto", "openvpncl_tuntap", "openvpncl_mtu",
+            "openvpncl_ca", "openvpncl_client", "openvpncl_key",
+            "openvpncl_cipher", "openvpncl_sec", "openvpncl_lzo",
+            "openvpncl_upauth", "openvpncl_user", "openvpncl_pass",
+            "openvpncl_keydirection", "openvpncl_tlsauth",
+            "openvpncl_nat", "openvpncl_config",
+        ]
+        for key in keys:
+            result = conn.run(f"nvram get {key}", hide=True, warn=True)
+            if result.exited == 0 and result.stdout.strip():
+                config[key] = result.stdout.strip()
+        return config
+
+    def apply_vpn_config(self, conn, vpn_config: Dict[str, str]):
+        for key, value in vpn_config.items():
+            escaped = value.replace("'", "'\\''")
+            result = conn.run(f"nvram set {key}='{escaped}'", hide=True)
+            if result.exited != 0:
+                raise Exception(f'remote nvram set {key} failed')
+        result = conn.run("nvram commit", hide=True)
+        if result.exited != 0:
+            raise Exception('remote nvram commit failed')
+
+    def start_vpn(self, conn):
+        conn.run("nvram set openvpncl_enable=1", hide=True)
+        conn.run("nvram commit", hide=True)
+        result = conn.run("service openvpn start", hide=True, warn=True)
+        if result.exited != 0:
+            raise Exception('failed to start openvpn service')
+
+    def stop_vpn(self, conn):
+        conn.run("nvram set openvpncl_enable=0", hide=True)
+        conn.run("nvram commit", hide=True)
+        result = conn.run("service openvpn stop", hide=True, warn=True)
+        if result.exited != 0:
+            raise Exception('failed to stop openvpn service')

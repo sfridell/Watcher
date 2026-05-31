@@ -124,3 +124,28 @@ class RouterBase(ABC):
     def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
         """Apply VLAN routing restriction rules to the router's firewall configuration."""
         pass
+
+    @abstractmethod
+    def get_vpn_status(self, conn) -> Dict[str, Any]:
+        """Return VPN status info: whether connected, interface, remote server, etc."""
+        pass
+
+    @abstractmethod
+    def get_vpn_config(self, conn) -> Dict[str, str]:
+        """Return the current VPN client configuration from the router as a dict of nvram-like keys."""
+        pass
+
+    @abstractmethod
+    def apply_vpn_config(self, conn, vpn_config: Dict[str, str]):
+        """Apply a VPN client configuration to the router."""
+        pass
+
+    @abstractmethod
+    def start_vpn(self, conn):
+        """Start the OpenVPN client on the router."""
+        pass
+
+    @abstractmethod
+    def stop_vpn(self, conn):
+        """Stop the OpenVPN client on the router."""
+        pass

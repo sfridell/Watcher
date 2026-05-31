@@ -158,6 +158,12 @@
                 height: dp(48)
                 on_press: root.show_config()
 
+            MDRectangleFlatButton:
+                text: 'VPN Status'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_vpn_status()
+
 <ConfigureScreen>:
     MDBoxLayout:
         orientation: 'vertical'
@@ -189,6 +195,12 @@
                 size_hint_y: None
                 height: dp(48)
                 on_press: root.show_vlan_config()
+
+            MDRectangleFlatButton:
+                text: 'VPN Configuration'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_vpn_config()
 
 <ClientsScreen>:
     MDBoxLayout:
@@ -744,3 +756,340 @@
                 MDFlatButton:
                     text: 'Cancel'
                     on_press: root.go_back()
+
+<VpnStatusScreen>:
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(10)
+
+            MDTextField:
+                id: status_text
+                size_hint_y: 0.82
+                readonly: True
+                multiline: True
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Refresh'
+                    on_press: root.load_status()
+
+                MDRaisedButton:
+                    text: 'Toggle VPN'
+                    on_press: root.toggle_vpn()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
+
+<VpnConfigListScreen>:
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(10)
+
+            MDLabel:
+                id: status_label
+                text: ''
+                size_hint_y: None
+                height: dp(20)
+                font_style: 'Caption'
+                theme_text_color: 'Secondary'
+
+            ScrollView:
+                MDBoxLayout:
+                    id: config_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(5)
+                    height: self.minimum_height
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Add Config'
+                    on_press: root.add_config()
+
+                MDRaisedButton:
+                    text: 'Import .ovpn'
+                    on_press: root.import_ovpn()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
+
+<VpnConfigEditScreen>:
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        MDTopAppBar:
+            id: toolbar
+            title: 'VPN Config'
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+
+        ScrollView:
+            MDBoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(10)
+                spacing: dp(8)
+
+                MDLabel:
+                    id: status_label
+                    text: ''
+                    size_hint_y: None
+                    height: dp(20)
+                    font_style: 'Caption'
+                    theme_text_color: 'Custom'
+                    color: (0.2, 0.7, 0.2, 1)
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Config Name:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_name
+                        size_hint_x: 0.7
+                        hint_text: 'Name'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Import .ovpn:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: ovpn_path
+                        size_hint_x: 0.5
+                        hint_text: 'File path'
+
+                    MDRaisedButton:
+                        text: 'Load'
+                        size_hint_x: 0.2
+                        on_press: root.load_ovpn_from_path()
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Remote:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_remote
+                        size_hint_x: 0.7
+                        hint_text: 'Server address'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Port:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_port
+                        size_hint_x: 0.7
+                        hint_text: '1194'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Protocol:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_proto
+                        size_hint_x: 0.7
+                        hint_text: 'udp'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Device:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_dev
+                        size_hint_x: 0.7
+                        hint_text: 'tun0'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Cipher:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_cipher
+                        size_hint_x: 0.7
+                        hint_text: 'AES-256-CBC'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Auth:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_auth
+                        size_hint_x: 0.7
+                        hint_text: 'SHA256'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Compression:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_complzo
+                        size_hint_x: 0.7
+                        hint_text: 'no'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Username:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_username
+                        size_hint_x: 0.7
+                        hint_text: '(optional)'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'Password:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: vpn_password
+                        size_hint_x: 0.7
+                        hint_text: '(optional)'
+                        password: True
+
+                MDLabel:
+                    text: 'CA Certificate:'
+                    size_hint_y: None
+                    height: dp(20)
+                    font_style: 'Caption'
+
+                MDTextField:
+                    id: vpn_ca
+                    size_hint_y: None
+                    height: dp(100)
+                    multiline: True
+                    hint_text: 'Paste CA cert or import from .ovpn'
+
+                MDLabel:
+                    text: 'Client Certificate:'
+                    size_hint_y: None
+                    height: dp(20)
+                    font_style: 'Caption'
+
+                MDTextField:
+                    id: vpn_cert
+                    size_hint_y: None
+                    height: dp(100)
+                    multiline: True
+                    hint_text: 'Paste client cert or import from .ovpn'
+
+                MDLabel:
+                    text: 'Client Key:'
+                    size_hint_y: None
+                    height: dp(20)
+                    font_style: 'Caption'
+
+                MDTextField:
+                    id: vpn_key
+                    size_hint_y: None
+                    height: dp(100)
+                    multiline: True
+                    hint_text: 'Paste client key or import from .ovpn'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(10)
+
+                    MDRaisedButton:
+                        text: 'Save'
+                        on_press: root.save_config()
+
+                    MDRaisedButton:
+                        text: 'Browse .ovpn'
+                        on_press: root.show_file_chooser()
+
+                    MDFlatButton:
+                        text: 'Cancel'
+                        on_press: root.go_back()

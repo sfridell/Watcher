@@ -74,6 +74,15 @@ _DEFAULT_STATE = {
         "lan_ipaddr": "192.168.1.1",
         "lan_netmask": "255.255.255.0",
     },
+    "vpn": {
+        "enabled": False,
+        "connected": False,
+        "remote": "",
+        "port": "",
+        "proto": "",
+        "interface": "",
+    },
+    "vpn_config": {},
 }
 
 _MOCK_STATE_DIR = "./mock_state"
@@ -342,4 +351,40 @@ class MockRouter(RouterBase):
     def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
         """Store VLAN routing restrictions in mock state."""
         self._state["vlan_restrictions"] = copy.deepcopy(rules)
+        self._save_state()
+
+    def get_vpn_status(self, conn) -> Dict[str, Any]:
+        vpn_state = self._state.get("vpn", {})
+        return {
+            "enabled": vpn_state.get("enabled", False),
+            "connected": vpn_state.get("connected", False),
+            "remote": vpn_state.get("remote", ""),
+            "port": vpn_state.get("port", ""),
+            "proto": vpn_state.get("proto", ""),
+            "interface": vpn_state.get("interface", ""),
+        }
+
+    def get_vpn_config(self, conn) -> Dict[str, str]:
+        return copy.deepcopy(self._state.get("vpn_config", {}))
+
+    def apply_vpn_config(self, conn, vpn_config: Dict[str, str]):
+        self._state["vpn_config"] = copy.deepcopy(vpn_config)
+        self._save_state()
+
+    def start_vpn(self, conn):
+        vpn_config = self._state.get("vpn_config", {})
+        if not vpn_config:
+            raise Exception('No VPN configuration applied. Apply a config before starting.')
+        self._state.setdefault("vpn", {})["enabled"] = True
+        self._state.setdefault("vpn", {})["connected"] = True
+        self._state.setdefault("vpn", {})["remote"] = vpn_config.get("openvpncl_remoteip", "")
+        self._state.setdefault("vpn", {})["port"] = vpn_config.get("openvpncl_remoteport", "")
+        self._state.setdefault("vpn", {})["proto"] = vpn_config.get("openvpncl_proto", "")
+        self._state.setdefault("vpn", {})["interface"] = "tun0"
+        self._save_state()
+
+    def stop_vpn(self, conn):
+        self._state.setdefault("vpn", {})["enabled"] = False
+        self._state.setdefault("vpn", {})["connected"] = False
+        self._state.setdefault("vpn", {})["interface"] = ""
         self._save_state()

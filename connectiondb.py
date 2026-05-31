@@ -122,3 +122,37 @@ class ConnectionDB:
 
     def show_connection(self, args, output):
         json.dump(self.connections[args.connection], output)
+
+    def get_vpn_configs(self, conn_name):
+        if conn_name not in self.connections:
+            return {}
+        return self.connections[conn_name].get('vpn_configs', {})
+
+    def add_vpn_config(self, conn_name, vpn_name, vpn_config):
+        if conn_name not in self.connections:
+            raise ValueError(f"Connection '{conn_name}' does not exist")
+        if 'vpn_configs' not in self.connections[conn_name]:
+            self.connections[conn_name]['vpn_configs'] = {}
+        self.connections[conn_name]['vpn_configs'][vpn_name] = vpn_config
+        self._save_connections()
+
+    def delete_vpn_config(self, conn_name, vpn_name):
+        if conn_name not in self.connections:
+            raise ValueError(f"Connection '{conn_name}' does not exist")
+        configs = self.connections[conn_name].get('vpn_configs', {})
+        if vpn_name in configs:
+            del configs[vpn_name]
+            if self.connections[conn_name].get('active_vpn') == vpn_name:
+                self.connections[conn_name]['active_vpn'] = ''
+            self._save_connections()
+
+    def get_active_vpn(self, conn_name):
+        if conn_name not in self.connections:
+            return ''
+        return self.connections[conn_name].get('active_vpn', '')
+
+    def set_active_vpn(self, conn_name, vpn_name):
+        if conn_name not in self.connections:
+            raise ValueError(f"Connection '{conn_name}' does not exist")
+        self.connections[conn_name]['active_vpn'] = vpn_name
+        self._save_connections()
