@@ -786,10 +786,6 @@
                     text: 'Refresh'
                     on_press: root.load_status()
 
-                MDRaisedButton:
-                    text: 'Toggle VPN'
-                    on_press: root.toggle_vpn()
-
                 MDFlatButton:
                     text: 'Back'
                     on_press: root.go_back()
@@ -836,6 +832,10 @@
                 MDRaisedButton:
                     text: 'Import .ovpn'
                     on_press: root.import_ovpn()
+
+                MDRaisedButton:
+                    text: 'Start/Stop VPN'
+                    on_press: root.toggle_vpn()
 
                 MDFlatButton:
                     text: 'Back'

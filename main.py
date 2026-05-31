@@ -1319,36 +1319,6 @@ class VpnStatusScreen(Screen):
         except Exception as e:
             self.ids.status_text.text = f'Error: {str(e)}'
 
-    def toggle_vpn(self):
-        try:
-            db = connectiondb.ConnectionDB()
-            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
-            if conn is None:
-                self.show_error('Failed to connect')
-                return
-            status = router.get_vpn_status(conn)
-            if status.get('connected'):
-                router.stop_vpn(conn)
-            else:
-                self.apply_and_start(router, conn, db)
-            self.load_status()
-        except Exception as e:
-            self.show_error(f'Failed: {str(e)}')
-
-    def apply_and_start(self, router, conn, db):
-        active_vpn = db.get_active_vpn(self.connection_name)
-        if not active_vpn:
-            self.show_error('No VPN config selected. Set an active config first.')
-            return
-        vpn_configs = db.get_vpn_configs(self.connection_name)
-        vpn_config = vpn_configs.get(active_vpn)
-        if not vpn_config:
-            self.show_error(f'VPN config "{active_vpn}" not found.')
-            return
-        nvram_config = get_ddwrt_nvram_from_config(vpn_config)
-        router.apply_vpn_config(conn, nvram_config)
-        router.start_vpn(conn)
-
     def go_back(self):
         self.manager.current = 'status'
 
@@ -1415,6 +1385,37 @@ class VpnConfigListScreen(Screen):
             self.load_configs()
         except Exception as e:
             self.show_error(f'Failed to activate: {str(e)}')
+
+    def toggle_vpn(self):
+        try:
+            db = connectiondb.ConnectionDB()
+            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+            if conn is None:
+                self.show_error('Failed to connect')
+                return
+            status = router.get_vpn_status(conn)
+            if status.get('connected'):
+                router.stop_vpn(conn)
+            else:
+                self.apply_and_start(router, conn, db)
+            self.load_configs()
+        except Exception as e:
+            self.show_error(f'Failed: {str(e)}')
+            self.load_configs()
+
+    def apply_and_start(self, router, conn, db):
+        active_vpn = db.get_active_vpn(self.connection_name)
+        if not active_vpn:
+            self.show_error('No VPN config selected. Set an active config first.')
+            return
+        vpn_configs = db.get_vpn_configs(self.connection_name)
+        vpn_config = vpn_configs.get(active_vpn)
+        if not vpn_config:
+            self.show_error(f'VPN config "{active_vpn}" not found.')
+            return
+        nvram_config = get_ddwrt_nvram_from_config(vpn_config)
+        router.apply_vpn_config(conn, nvram_config)
+        router.start_vpn(conn)
 
     def add_config(self):
         self.manager.get_screen('vpn_config_edit').set_connection(self.connection_name)
