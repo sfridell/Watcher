@@ -1,6 +1,11 @@
 FROM python:3.11-slim as base
 
+ARG HOST_KVM_GID=109
+
 RUN groupadd -r pydevel --gid=1000 && useradd -r -g pydevel --uid=1000 --create-home --shell /bin/bash pydevel
+
+RUN groupadd -g ${HOST_KVM_GID} hostkvm && \
+    usermod -aG hostkvm pydevel
 
 RUN set -ex \
     && RUN_DEPS=" \
@@ -33,7 +38,7 @@ RUN \
   python3 -m pip install "kivy[base]" kivy-examples
 
 RUN \
-  apt-get update && apt-get install -y --no-install-recommends curl git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client xclip
+  apt-get update && apt-get install -y --no-install-recommends curl git zip unzip openjdk-17-jdk python3-pip autoconf automake libtool libltdl-dev pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev android-sdk vim-tiny yad openssh-client xclip qemu-kvm qemu-utils bridge-utils iptables iproute2
   
 RUN \
   python3 -m pip install --upgrade Cython==0.29.33 virtualenv
