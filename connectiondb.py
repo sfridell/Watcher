@@ -16,6 +16,39 @@ if 'ssh-rsa' not in paramiko.Transport._key_info:
 if 'ssh-rsa' not in paramiko.RSAKey.HASHES:
     paramiko.RSAKey.HASHES['ssh-rsa'] = hashes.SHA1
 
+from paramiko.kex_group14 import KexGroup14SHA256
+from paramiko.kex_gex import KexGexSHA256
+import hashlib
+
+
+class KexGroup1SHA1(KexGroup14SHA256):
+    name = "diffie-hellman-group1-sha1"
+    hash_algo = hashlib.sha1
+    P = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381FFFFFFFFFFFFFFFF  # noqa
+    G = 2
+
+
+class KexGroup14SHA1(KexGroup14SHA256):
+    name = "diffie-hellman-group14-sha1"
+    hash_algo = hashlib.sha1
+
+
+class KexGexSHA1(KexGexSHA256):
+    name = "diffie-hellman-group-exchange-sha1"
+    hash_algo = hashlib.sha1
+
+
+if 'diffie-hellman-group1-sha1' not in paramiko.Transport._kex_info:
+    paramiko.Transport._kex_info['diffie-hellman-group1-sha1'] = KexGroup1SHA1
+if 'diffie-hellman-group14-sha1' not in paramiko.Transport._kex_info:
+    paramiko.Transport._kex_info['diffie-hellman-group14-sha1'] = KexGroup14SHA1
+if 'diffie-hellman-group-exchange-sha1' not in paramiko.Transport._kex_info:
+    paramiko.Transport._kex_info['diffie-hellman-group-exchange-sha1'] = KexGexSHA1
+
+for _kex in ('diffie-hellman-group1-sha1', 'diffie-hellman-group14-sha1'):
+    if _kex not in paramiko.Transport._preferred_kex:
+        paramiko.Transport._preferred_kex = (_kex,) + tuple(paramiko.Transport._preferred_kex)
+
 
 class _MockConnection:
     """Placeholder connection object for MockRouter. Carries no state since the mock handler manages its own."""
@@ -68,8 +101,10 @@ class ConnectionDB:
             return _MockConnection()
         c = Connection(host=md['ip'], user=md['username'], port=md['port'],
                        connect_kwargs={
-                           "key_filename": f"./keyfiles/{name}_rsa",
+                           "pkey": paramiko.RSAKey.from_private_key_file(f"./keyfiles/{name}_rsa"),
                            "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
+                           "look_for_keys": False,
+                           "allow_agent": False,
                        })
         return c
 
@@ -85,13 +120,58 @@ class ConnectionDB:
             return _MockConnection(), handler
         c = Connection(host=md['ip'], user=md['username'], port=md['port'],
                        connect_kwargs={
-                           "key_filename": f"./keyfiles/{name}_rsa",
+                           "pkey": paramiko.RSAKey.from_private_key_file(f"./keyfiles/{name}_rsa"),
                            "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
+                           "look_for_keys": False,
+                           "allow_agent": False,
                        })
         return c, handler
 
+    def provision_ssh_keys(self, name, ip, port, username, password, output):
+        """Generate an RSA key pair, connect to the router via password auth, and install the public key
+        into NVRAM so SSH key-based auth works on subsequent connections."""
+        self._generate_and_save_key_pair(name)
+
+        with open(f"./keyfiles/{name}_rsa.pub", 'r') as f:
+            pub_key = f.read().strip()
+
+        conn = Connection(
+            host=ip, user=username, port=int(port),
+            connect_kwargs={
+                "password": password,
+                "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
+            },
+        )
+        try:
+            conn.run(f'nvram set sshd_authorized_keys="{pub_key}"', hide=True)
+            conn.run('nvram commit', hide=True)
+            home_dir = conn.run('echo $HOME', hide=True).stdout.strip() or '/tmp/root'
+            conn.run(f'mkdir -p {home_dir}/.ssh && echo "{pub_key}" >> {home_dir}/.ssh/authorized_keys && chmod 600 {home_dir}/.ssh/authorized_keys', hide=True)
+        except Exception as e:
+            print(f"ERROR: failed to provision SSH key on router: {e}", file=output)
+            raise
+        finally:
+            conn.close()
+
+        verify_conn = Connection(
+            host=ip, user=username, port=int(port),
+            connect_kwargs={
+                "pkey": paramiko.RSAKey.from_private_key_file(f"./keyfiles/{name}_rsa"),
+                "disabled_algorithms": dict(pubkeys=["rsa-sha2-512", "rsa-sha2-256"]),
+                "look_for_keys": False,
+                "allow_agent": False,
+            },
+        )
+        try:
+            verify_conn.run('echo ok', hide=True)
+            print(f'SSH key provisioned successfully for {name}', file=output)
+        except Exception as e:
+            print(f"WARNING: SSH key verification failed: {e}", file=output)
+        finally:
+            verify_conn.close()
+
     def new_connection(self, args, output):
-        """Create a new connection profile. Generates an RSA key pair for real routers; skips for mock type."""
+        """Create a new connection profile. For real routers, requires --pw and auto-provisions SSH keys."""
         if args.name in self.connections:
             print(f'ERROR: connection to {args.name} already exists', file=output)
             return
@@ -99,14 +179,15 @@ class ConnectionDB:
         router_type = args.router_type
 
         if router_type != 'mock':
+            if not getattr(args, 'pw', None):
+                print('ERROR: --pw is required for non-mock router connections', file=output)
+                return
             try:
-                self._generate_and_save_key_pair(args.name)
-            except IOError as e:
-                print(f"ERROR: writing to key file: {e}", file=output)
-
-            print('Please cut and paste the following text to your router\'s authorized keys input:')
-            with open(f"./keyfiles/{args.name}_rsa.pub", 'r') as f:
-                print(f.read())
+                self.provision_ssh_keys(
+                    args.name, args.ip, args.port, args.username, args.pw, output
+                )
+            except Exception:
+                return
 
         self.connections[args.name] = {
             'ip': args.ip if router_type != 'mock' else 'mock',

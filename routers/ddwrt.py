@@ -3,9 +3,80 @@ import ipaddress
 from typing import List, Dict, Any
 from .base import RouterBase
 
+_IFACE_NUM_RE = re.compile(r'^(vlan|br|eth)(\d+)$')
+
 
 class DDWRTRouter(RouterBase):
-    """Router handler that communicates with DD-WRT routers via SSH nvram/shell commands."""
+    """Router handler that communicates with DD-WRT routers via SSH nvram/shell commands.
+
+    Automatically probes the remote system for available service management commands
+    (service, startservice/stopservice, or killall+binary) and tolerates missing
+    NVRAM keys, so it works across DD-WRT variants (hardware routers, x86 VMs, etc.).
+    """
+
+    def __init__(self):
+        self._capabilities_probed = False
+        self._service_restart_cmd = None
+
+    def _probe_capabilities(self, conn):
+        if self._capabilities_probed:
+            return
+        result = conn.run("which service 2>/dev/null", hide=True, warn=True)
+        if result.exited == 0 and result.stdout.strip():
+            self._service_restart_cmd = "service"
+        else:
+            result = conn.run("which startservice 2>/dev/null", hide=True, warn=True)
+            if result.exited == 0 and result.stdout.strip():
+                self._service_restart_cmd = "ddwrt"
+            else:
+                self._service_restart_cmd = "killall"
+        self._capabilities_probed = True
+
+    def _restart_service(self, conn, service_name):
+        self._probe_capabilities(conn)
+        if self._service_restart_cmd == "service":
+            result = conn.run(f"service {service_name} restart", hide=True, warn=True)
+        elif self._service_restart_cmd == "ddwrt":
+            result = conn.run(f"stopservice {service_name} && startservice {service_name}", hide=True, warn=True)
+        else:
+            result = conn.run(f"killall {service_name} 2>/dev/null; sleep 1; /usr/sbin/{service_name}", hide=True, warn=True)
+        if result.exited != 0:
+            raise Exception(f'remote {service_name} restart command failed')
+
+    def _start_service(self, conn, service_name):
+        self._probe_capabilities(conn)
+        if self._service_restart_cmd == "service":
+            result = conn.run(f"service {service_name} start", hide=True, warn=True)
+        elif self._service_restart_cmd == "ddwrt":
+            result = conn.run(f"startservice {service_name}", hide=True, warn=True)
+        else:
+            result = conn.run(f"/usr/sbin/{service_name}", hide=True, warn=True)
+        if result.exited != 0:
+            raise Exception(f'failed to start {service_name} service')
+
+    def _stop_service(self, conn, service_name):
+        self._probe_capabilities(conn)
+        if self._service_restart_cmd == "service":
+            result = conn.run(f"service {service_name} stop", hide=True, warn=True)
+        elif self._service_restart_cmd == "ddwrt":
+            result = conn.run(f"stopservice {service_name}", hide=True, warn=True)
+        else:
+            result = conn.run(f"killall {service_name}", hide=True, warn=True)
+        if result.exited != 0:
+            raise Exception(f'failed to stop {service_name} service')
+
+    @staticmethod
+    def _iface_num(iface):
+        m = _IFACE_NUM_RE.match(iface)
+        return int(m.group(2)) if m else None
+
+    def _nvram_grep(self, conn, pattern):
+        result = conn.run(f"nvram show | grep '{pattern}'", hide=True, warn=True)
+        if result.exited == 1:
+            return ""
+        if result.exited != 0:
+            raise Exception('remote nvram grep command failed')
+        return result.stdout
 
     def get_dhcp_leases(self, conn) -> List[List[str]]:
         result = conn.run('cat /tmp/dnsmasq.leases', hide=True)
@@ -17,11 +88,11 @@ class DDWRTRouter(RouterBase):
         return data
 
     def get_static_leases(self, conn) -> List[List[str]]:
-        result = conn.run('nvram show | grep static_leases', hide=True)
-        if result.exited != 0:
-            raise Exception('remote list command failed')
+        stdout = self._nvram_grep(conn, "static_leases")
+        if not stdout:
+            return []
         data = []
-        for lease in result.stdout.removeprefix('static_leases=').split():
+        for lease in stdout.removeprefix('static_leases=').split():
             data.append(lease.split('=')[:-1])
         return data
 
@@ -41,14 +112,10 @@ class DDWRTRouter(RouterBase):
         filtered = [line for line in lines if len(line.split()) < 2 or line.split()[1] not in mac_addresses]
         lease_content = '\n'.join(filtered) + '\n'
         conn.run(f"echo '{lease_content}' > /tmp/dnsmasq.leases", hide=True)
-        result = conn.run('service dnsmasq restart', hide=True)
-        if result.exited != 0:
-            raise Exception('remote dnsmasq restart command failed')
+        self._restart_service(conn, "dnsmasq")
 
     def restart_dhcp_service(self, conn):
-        result = conn.run('service dnsmasq restart', hide=True)
-        if result.exited != 0:
-            raise Exception('remote dnsmasq restart command failed')
+        self._restart_service(conn, "dnsmasq")
 
     def commit_config(self, conn):
         result = conn.run('nvram commit', hide=True)
@@ -93,15 +160,15 @@ class DDWRTRouter(RouterBase):
         return bridges
 
     def get_vlans(self, conn) -> Dict[str, Any]:
-        result = conn.run("nvram show | grep vlan", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram command failed')
+        stdout = self._nvram_grep(conn, "vlan")
+        if not stdout:
+            return {}
         vlans = {}
-        vlan_ips = re.findall(r'(vlan\d+)_ipaddr=([0-9\.]+)', result.stdout)
-        vlan_netmasks = re.findall(r'(vlan\d+)_netmask=([0-9\.]+)', result.stdout)
-        vlan_bridged = re.findall(r'(vlan\d+)_bridged=(\d)', result.stdout)
-        vlan_nat = re.findall(r'(vlan\d+)_nat=(\d)', result.stdout)
-        vlan_dhcp = re.findall(r'mdhcpd=.*? (vlan\d+)>On>(\d+)>(\d+)>(\d+)', result.stdout)
+        vlan_ips = re.findall(r'(vlan\d+)_ipaddr=([0-9\.]+)', stdout)
+        vlan_netmasks = re.findall(r'(vlan\d+)_netmask=([0-9\.]+)', stdout)
+        vlan_bridged = re.findall(r'(vlan\d+)_bridged=(\d)', stdout)
+        vlan_nat = re.findall(r'(vlan\d+)_nat=(\d)', stdout)
+        vlan_dhcp = re.findall(r'mdhcpd=.*? (vlan\d+)>On>(\d+)>(\d+)>(\d+)', stdout)
 
         for vlan, ip in vlan_ips:
             vlans.setdefault(vlan, {})["ip"] = ip
@@ -121,11 +188,11 @@ class DDWRTRouter(RouterBase):
         return vlans
 
     def get_port_vlan_map(self, conn) -> Dict[str, List[int]]:
-        result = conn.run("nvram show | grep port.*vlans", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram command failed')
+        stdout = self._nvram_grep(conn, "port.*vlans")
+        if not stdout:
+            return {}
         port_vlan_map = {}
-        for line in result.stdout.splitlines():
+        for line in stdout.splitlines():
             port_match = re.match(r'port(\d+)vlans=(.*)', line)
             if port_match:
                 port_num = int(port_match.group(1))
@@ -134,10 +201,10 @@ class DDWRTRouter(RouterBase):
         return port_vlan_map
 
     def get_bridge_dhcp_config(self, conn) -> List[tuple]:
-        result = conn.run("nvram show | grep mdhcpd", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram command failed')
-        return re.findall(r'mdhcpd=.*?(br\d+)>On>(\d+)>(\d+)>(\d+)', result.stdout)
+        stdout = self._nvram_grep(conn, "mdhcpd")
+        if not stdout:
+            return []
+        return re.findall(r'mdhcpd=.*?(br\d+)>On>(\d+)>(\d+)>(\d+)', stdout)
 
     def get_bridge_ip_info(self, conn, bridge: str) -> List[tuple]:
         result = conn.run(f"ip addr show {bridge}", hide=True)
@@ -174,12 +241,9 @@ class DDWRTRouter(RouterBase):
             raise Exception(f'remote set {vlan_key}_nat failed')
 
     def set_vlan_dhcp(self, conn, vlan_id: int, start: int, size: int, lease: int):
-        """Enable DHCP on a VLAN by updating the mdhcpd nvram variable to include the VLAN's entry."""
         vlan_key = f"vlan{vlan_id}"
-        result = conn.run("nvram get mdhcpd", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram get mdhcpd failed')
-        mdhcpd = result.stdout.strip()
+        result = conn.run("nvram get mdhcpd", hide=True, warn=True)
+        mdhcpd = result.stdout.strip() if result.exited == 0 else ""
         existing = mdhcpd.split() if mdhcpd else []
         filtered = [e for e in existing if not e.startswith(f"{vlan_key}>")]
         new_entry = f"{vlan_key}>On>{start}>{size}>{lease}"
@@ -190,12 +254,9 @@ class DDWRTRouter(RouterBase):
             raise Exception('remote set mdhcpd failed')
 
     def remove_vlan_dhcp(self, conn, vlan_id: int):
-        """Remove a VLAN's DHCP entry from the mdhcpd nvram variable."""
         vlan_key = f"vlan{vlan_id}"
-        result = conn.run("nvram get mdhcpd", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram get mdhcpd failed')
-        mdhcpd = result.stdout.strip()
+        result = conn.run("nvram get mdhcpd", hide=True, warn=True)
+        mdhcpd = result.stdout.strip() if result.exited == 0 else ""
         existing = mdhcpd.split() if mdhcpd else []
         filtered = [e for e in existing if not e.startswith(f"{vlan_key}>")]
         new_mdhcpd = " ".join(filtered)
@@ -204,13 +265,12 @@ class DDWRTRouter(RouterBase):
             raise Exception('remote set mdhcpd failed')
 
     def delete_vlan(self, conn, vlan_id: int):
-        """Remove a VLAN entirely by unsetting its nvram keys and stripping it from mdhcpd."""
         vlan_key = f"vlan{vlan_id}"
         for key in [f"{vlan_key}_ipaddr", f"{vlan_key}_netmask",
                      f"{vlan_key}_bridged", f"{vlan_key}_nat"]:
             conn.run(f'nvram unset {key}', hide=True)
-        result = conn.run("nvram get mdhcpd", hide=True)
-        mdhcpd = result.stdout.strip()
+        result = conn.run("nvram get mdhcpd", hide=True, warn=True)
+        mdhcpd = result.stdout.strip() if result.exited == 0 else ""
         existing = mdhcpd.split() if mdhcpd else []
         filtered = [e for e in existing if not e.startswith(f"{vlan_key}>")]
         new_mdhcpd = " ".join(filtered)
@@ -224,10 +284,8 @@ class DDWRTRouter(RouterBase):
                 raise Exception(f'remote set {port}vlans failed')
 
     def set_bridge_dhcp(self, conn, bridge: str, start: int, size: int, lease: int):
-        result = conn.run("nvram get mdhcpd", hide=True)
-        if result.exited != 0:
-            raise Exception('remote nvram get mdhcpd failed')
-        mdhcpd = result.stdout.strip()
+        result = conn.run("nvram get mdhcpd", hide=True, warn=True)
+        mdhcpd = result.stdout.strip() if result.exited == 0 else ""
         existing = mdhcpd.split() if mdhcpd else []
         filtered = [e for e in existing if not e.startswith(f"{bridge}>")]
         new_entry = f"{bridge}>On>{start}>{size}>{lease}"
@@ -255,11 +313,12 @@ class DDWRTRouter(RouterBase):
         """No-op on DD-WRT; port membership is managed via the port VLAN map nvram variables."""
 
     def get_firewall_rules(self, conn) -> List[Dict[str, Any]]:
-        """Parse VLAN routing restrictions from rc_firewall.
+        """Parse interface routing restrictions from rc_firewall.
 
         Collects rules from both the watcher-managed block and any unmanaged
-        iptables FORWARD DROP rules matching the VLAN restriction pattern,
+        iptables FORWARD DROP rules matching the interface restriction pattern,
         so that manually-created firewall rules are also discovered.
+        Accepts any interface name pattern (vlanN, brN, ethN, etc.).
         """
         result = conn.run("nvram get rc_firewall", hide=True)
         rules = []
@@ -278,20 +337,14 @@ class DDWRTRouter(RouterBase):
                 continue
             from_iface = iface_match.group(1)
             to_iface = oface_match.group(1)
-            if not re.match(r"vlan\d+$", from_iface) or not re.match(r"vlan\d+$", to_iface):
-                continue
-            from_match = re.search(r"vlan(\d+)", from_iface)
-            to_match = re.search(r"vlan(\d+)", to_iface)
-            if not from_match or not to_match:
-                continue
-            key = (from_match.group(1), to_match.group(1))
+            key = (from_iface, to_iface)
             if key in seen_keys:
                 continue
             seen_keys.add(key)
             comment_match = re.search(r"-m comment --comment \"([^\"]+)\"", line)
             rule = {
-                "from": int(key[0]),
-                "to": int(key[1]),
+                "from": self._iface_num(from_iface),
+                "to": self._iface_num(to_iface),
                 "from_iface": from_iface,
                 "to_iface": to_iface,
             }
@@ -303,9 +356,9 @@ class DDWRTRouter(RouterBase):
     def set_firewall_rules(self, conn, rules: List[Dict[str, Any]]):
         """Write watcher-managed firewall rules to rc_firewall.
 
-        Preserves any existing non-watcher, non-VLAN-restriction content.
-        Any VLAN FORWARD DROP rules outside the watcher block are removed
-        (since they are now managed within the watcher block).
+        Preserves any existing non-watcher, non-interface-restriction content.
+        Any FORWARD DROP rules with both -i and -o outside the watcher block
+        are removed (since they are now managed within the watcher block).
         """
         result = conn.run("nvram get rc_firewall", hide=True)
         existing = ""
@@ -325,8 +378,8 @@ class DDWRTRouter(RouterBase):
                 continue
             if stripped.startswith("iptables") and "-j DROP" in stripped:
                 if ("-I FORWARD" in stripped or "-A FORWARD" in stripped):
-                    iface_match = re.search(r"-i\s+(vlan\d+)", stripped)
-                    oface_match = re.search(r"-o\s+(vlan\d+)", stripped)
+                    iface_match = re.search(r"-i\s+\S+", stripped)
+                    oface_match = re.search(r"-o\s+\S+", stripped)
                     if iface_match and oface_match:
                         continue
             lines.append(line)
@@ -407,13 +460,9 @@ class DDWRTRouter(RouterBase):
     def start_vpn(self, conn):
         conn.run("nvram set openvpncl_enable=1", hide=True)
         conn.run("nvram commit", hide=True)
-        result = conn.run("service openvpn start", hide=True, warn=True)
-        if result.exited != 0:
-            raise Exception('failed to start openvpn service')
+        self._start_service(conn, "openvpn")
 
     def stop_vpn(self, conn):
         conn.run("nvram set openvpncl_enable=0", hide=True)
         conn.run("nvram commit", hide=True)
-        result = conn.run("service openvpn stop", hide=True, warn=True)
-        if result.exited != 0:
-            raise Exception('failed to stop openvpn service')
+        self._stop_service(conn, "openvpn")

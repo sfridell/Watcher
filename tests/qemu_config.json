@@ -1,0 +1,25 @@
+{
+  "images_dir": "./tests/vm_images",
+  "routers": {
+    "ddwrt_x86": {
+      "local_image": "./dd-wrt_x86.qcow2",
+      "image_format": "qcow2",
+      "adapter_type": "ddwrt",
+      "qemu": {
+        "memory": 512,
+        "smp": 1,
+        "nic_model": "rtl8139",
+        "net": "192.168.1.0/24",
+        "guest_ip": "192.168.1.1",
+        "hostfwd": [
+          {"host_port": 2222, "guest_port": 22, "proto": "tcp"}
+        ]
+      },
+      "ssh": {
+        "username": "root",
+        "password": "admin",
+        "timeout": 120
+      }
+    }
+  }
+}
