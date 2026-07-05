@@ -7,6 +7,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 from routers import get_router_handler
 
+from crypto_helpers import encrypt_secret, decrypt_secret
+from dnslog import get_dns_handler
+
 if 'ssh-rsa' not in paramiko.Transport._preferred_keys:
     paramiko.Transport._preferred_keys = ('ssh-rsa',) + tuple(paramiko.Transport._preferred_keys)
 if 'ssh-rsa' not in paramiko.Transport._preferred_pubkeys:
@@ -52,6 +55,12 @@ for _kex in ('diffie-hellman-group1-sha1', 'diffie-hellman-group14-sha1'):
 
 class _MockConnection:
     """Placeholder connection object for MockRouter. Carries no state since the mock handler manages its own."""
+
+    pass
+
+
+class _MockDnsConnection:
+    """Placeholder connection object for the mock DNS-log handler."""
 
     pass
 
@@ -237,3 +246,93 @@ class ConnectionDB:
             raise ValueError(f"Connection '{conn_name}' does not exist")
         self.connections[conn_name]['active_vpn'] = vpn_name
         self._save_connections()
+
+    # -- DNS-log endpoint management --------------------------------
+    def set_dns_log(self, conn_name, dns_type, ip=None, apikey=None, pin=None,
+                    scheme=None):
+        """Attach a DNS-log endpoint to an existing router connection.
+
+        ``apikey`` (e.g. Pi-hole web/app password or revocable API token) is:
+          - omitted (and not required) for ``mock`` endpoints,
+          - stored in **plaintext** when no ``pin`` is supplied (convenient for
+            revocable API tokens; the trade-off is at-rest exposure),
+          - **encrypted** with the PIN via Scrypt+Fernet when a ``pin`` is
+            supplied (the PIN itself is never stored).
+
+        Stored shape within ``connections[conn_name]['dns_log']``::
+
+            # plaintext (default)
+            {"type": "pihole", "ip": "192.168.12.50", "apikey": "..."}
+            # encrypted (opt-in via --pin)
+            {"type": "pihole", "ip": "...", "encrypted_apikey": "<b64>", "salt": "<b64>"}
+        """
+        if conn_name not in self.connections:
+            raise ValueError(f"Connection '{conn_name}' does not exist")
+        entry = {'type': dns_type}
+        if ip is not None:
+            entry['ip'] = ip
+        if scheme:
+            entry['scheme'] = scheme
+        if apikey:
+            if pin:
+                token, salt = encrypt_secret(pin, apikey)
+                entry['encrypted_apikey'] = token
+                entry['salt'] = salt
+            else:
+                entry['apikey'] = apikey
+        elif dns_type not in ('mock',):
+            raise ValueError(
+                f"API key is required for dns-log type '{dns_type}'"
+            )
+        self.connections[conn_name]['dns_log'] = entry
+        self._save_connections()
+
+    def get_dns_log(self, conn_name):
+        """Return the (still-encrypted) stored DNS-log entry, or ``{}``."""
+        if conn_name not in self.connections:
+            return {}
+        return self.connections[conn_name].get('dns_log', {})
+
+    def delete_dns_log(self, conn_name):
+        if conn_name not in self.connections:
+            raise ValueError(f"Connection '{conn_name}' does not exist")
+        self.connections[conn_name].pop('dns_log', None)
+        self._save_connections()
+
+    def get_dns_log_handler(self, conn_name, output, pin=None):
+        """Return a ``(conn, handler)`` pair for the connection's DNS-log endpoint.
+
+        ``conn`` is the dict the handler consumes (with a decrypted ``apikey``
+        when applicable). For mock endpoints it is the placeholder
+        ``_MockDnsConnection``. Returns ``(None, None)`` and prints an error
+        when no DNS-log endpoint is configured.
+        """
+        if conn_name not in self.connections:
+            print(f'ERROR: connection to {conn_name} does not exist', file=output)
+            return None, None
+        entry = self.connections[conn_name].get('dns_log')
+        if not entry:
+            print(f'ERROR: no DNS-log endpoint configured for {conn_name}', file=output)
+            return None, None
+        dns_type = entry.get('type', '')
+        handler = get_dns_handler(dns_type, name=conn_name)
+        if dns_type == 'mock':
+            return _MockDnsConnection(), handler
+        # resolve apikey (encrypted -> PIN required; plaintext -> use directly)
+        apikey = None
+        if 'encrypted_apikey' in entry:
+            if not pin:
+                print('ERROR: PIN is required to access this DNS-log endpoint', file=output)
+                return None, None
+            try:
+                apikey = decrypt_secret(pin, entry['encrypted_apikey'], entry['salt'])
+            except ValueError as e:
+                print(f'ERROR: {e}', file=output)
+                return None, None
+        elif 'apikey' in entry:
+            apikey = entry['apikey']
+        conn_dict = {k: v for k, v in entry.items()
+                     if k not in ('encrypted_apikey', 'salt', 'apikey')}
+        if apikey is not None:
+            conn_dict['apikey'] = apikey
+        return conn_dict, handler

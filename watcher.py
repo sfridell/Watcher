@@ -638,7 +638,141 @@ def get_args(argv=sys.argv[1:]):
     vpn_delete_cmd.add_argument("--connection", type=str, required=True)
     vpn_delete_cmd.add_argument("--name", type=str, required=True)
 
+    parser_dnslog = subparsers.add_parser('dns-log')
+    dnslog_commands = parser_dnslog.add_subparsers(dest='dnslog_command')
+
+    dnslog_set_cmd = dnslog_commands.add_parser('set')
+    dnslog_set_cmd.add_argument("--connection", type=str, required=True)
+    dnslog_set_cmd.add_argument("--type", type=str, required=True,
+                                choices=['pihole', 'pihole_v5', 'mock'])
+    dnslog_set_cmd.add_argument("--ip", type=str, default=None,
+                                help="DNS-log endpoint IP (optional ':port')")
+    dnslog_set_cmd.add_argument("--scheme", type=str, default=None,
+                                choices=['http', 'https'])
+    dnslog_set_cmd.add_argument("--apikey", type=str, default=None,
+                                help="API key / password (prompted if omitted for non-mock)")
+    dnslog_set_cmd.add_argument("--pin", type=str, default=None,
+                                help="Encrypt the API key at rest with this PIN (optional; "
+                                     "omit to store it in plaintext for easy revocation)")
+
+    dnslog_show_cmd = dnslog_commands.add_parser('show')
+    dnslog_show_cmd.add_argument("--connection", type=str, required=True)
+
+    dnslog_clear_cmd = dnslog_commands.add_parser('clear')
+    dnslog_clear_cmd.add_argument("--connection", type=str, required=True)
+
+    dnslog_lookups_cmd = dnslog_commands.add_parser('lookups')
+    dnslog_lookups_cmd.add_argument("--connection", type=str, required=True)
+    dnslog_lookups_cmd.add_argument("--period", type=str, default='24h',
+                                    choices=['1h', '24h', '7d'])
+    dnslog_lookups_cmd.add_argument("--pin", type=str, default=None,
+                                    help="PIN to decrypt an encrypted API key "
+                                         "(only needed if --pin was used with 'set')")
+
+    dnslog_blocks_cmd = dnslog_commands.add_parser('blocks')
+    dnslog_blocks_cmd.add_argument("--connection", type=str, required=True)
+    dnslog_blocks_cmd.add_argument("--period", type=str, default='24h',
+                                   choices=['1h', '24h', '7d'])
+    dnslog_blocks_cmd.add_argument("--pin", type=str, default=None,
+                                   help="PIN to decrypt an encrypted API key "
+                                        "(only needed if --pin was used with 'set')")
+
     return parser.parse_args(argv)
+
+
+def dns_log_set(args, connections, output):
+    """Configure a DNS-log endpoint on an existing router connection."""
+    apikey = getattr(args, 'apikey', None)
+    if apikey is None and args.type != 'mock':
+        import getpass
+        try:
+            apikey = getpass.getpass('API key / password: ')
+        except Exception:
+            print('ERROR: could not read API key from terminal', file=output)
+            return
+    pin = getattr(args, 'pin', None)
+    if pin:
+        # confirm only when a PIN was supplied (opt-in encryption)
+        import getpass
+        confirm = getpass.getpass('Confirm PIN: ')
+        if pin != confirm:
+            print('ERROR: PINs do not match', file=output)
+            return
+    try:
+        connections.set_dns_log(
+            args.connection,
+            dns_type=args.type,
+            ip=getattr(args, 'ip', None),
+            apikey=apikey or None,
+            pin=pin or None,
+            scheme=getattr(args, 'scheme', None),
+        )
+    except ValueError as e:
+        print(f'ERROR: {e}', file=output)
+        return
+    mode = 'encrypted' if pin else 'plaintext'
+    print(f'DNS-log endpoint configured for {args.connection} (apikey stored {mode})', file=output)
+
+
+def dns_log_show(args, connections, output):
+    """Show the stored DNS-log endpoint metadata (API key is never printed)."""
+    entry = connections.get_dns_log(args.connection)
+    if not entry:
+        print(f'No DNS-log endpoint configured for {args.connection}', file=output)
+        return
+    safe = {k: v for k, v in entry.items() if k not in ('apikey', 'encrypted_apikey')}
+    if 'encrypted_apikey' in entry:
+        safe['apikey'] = '<encrypted>'
+    elif 'apikey' in entry:
+        safe['apikey'] = '<plaintext>'
+    json.dump(safe, output, indent=2, default=str)
+    print(file=output)
+
+
+def dns_log_clear(args, connections, output):
+    """Remove the DNS-log endpoint from a connection."""
+    try:
+        connections.delete_dns_log(args.connection)
+    except ValueError as e:
+        print(f'ERROR: {e}', file=output)
+        return
+    print(f'DNS-log endpoint removed from {args.connection}', file=output)
+
+
+def _dns_log_query(args, connections, output, kind):
+    pin = getattr(args, 'pin', None)
+    entry = connections.get_dns_log(args.connection)
+    needs_pin = bool(entry) and entry.get('type') != 'mock' and 'encrypted_apikey' in entry
+    if needs_pin and not pin:
+        import getpass
+        pin = getpass.getpass('PIN: ')
+    conn, handler = connections.get_dns_log_handler(args.connection, output, pin=pin)
+    if conn is None:
+        return
+    try:
+        if kind == 'lookups':
+            data = handler.get_dns_lookups(conn, args.period)
+        else:
+            data = handler.get_dns_blocks(conn, args.period)
+    except Exception as e:
+        print(f'ERROR: {e}', file=output)
+        return
+    if not data:
+        print(f'No DNS {kind} in the last {args.period}.', file=output)
+        return
+    rows = [[d['ip'], d['count']] for d in data]
+    headers = ['IP', 'Count']
+    print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
+
+
+def dns_log_lookups(args, connections, output):
+    """List per-client DNS lookup counts for the given period."""
+    _dns_log_query(args, connections, output, 'lookups')
+
+
+def dns_log_blocks(args, connections, output):
+    """List per-client DNS block counts for the given period."""
+    _dns_log_query(args, connections, output, 'blocks')
 
 
 def process_command(argv=sys.argv[1:]):
@@ -719,6 +853,17 @@ def process_command(argv=sys.argv[1:]):
             vpn_config_list(args, connections, output)
         elif args.vpn_command == 'delete':
             vpn_config_delete(args, connections, output)
+    elif args.command == 'dns-log':
+        if args.dnslog_command == 'set':
+            dns_log_set(args, connections, output)
+        elif args.dnslog_command == 'show':
+            dns_log_show(args, connections, output)
+        elif args.dnslog_command == 'clear':
+            dns_log_clear(args, connections, output)
+        elif args.dnslog_command == 'lookups':
+            dns_log_lookups(args, connections, output)
+        elif args.dnslog_command == 'blocks':
+            dns_log_blocks(args, connections, output)
 
     return output
 
