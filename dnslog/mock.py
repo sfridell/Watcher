@@ -14,6 +14,19 @@ _DEFAULT_STATE = {
         "192.168.1.30": 3,
         "192.168.1.20": 1,
     },
+    "blocked_domains": {
+        "ads.evil.com": 50,
+        "tracker.net": 30,
+        "malware.org": 10,
+    },
+    "client_lookups": {
+        "192.168.1.10": {"google.com": 80, "facebook.com": 62},
+        "192.168.1.11": {"github.com": 88},
+    },
+    "client_blocks": {
+        "192.168.1.10": {"ads.evil.com": 8, "tracker.net": 4},
+        "192.168.1.20": {"malware.org": 1},
+    },
 }
 
 _MOCK_STATE_DIR = "./mock_state"
@@ -55,8 +68,13 @@ class MockDnsLog(DnsLogBase):
         elif name is not None:
             self._load_state(name)
         else:
-            self._state = {"lookups": dict(_DEFAULT_STATE["lookups"]),
-                           "blocks": dict(_DEFAULT_STATE["blocks"])}
+            self._state = {
+                "lookups": dict(_DEFAULT_STATE["lookups"]),
+                "blocks": dict(_DEFAULT_STATE["blocks"]),
+                "blocked_domains": dict(_DEFAULT_STATE["blocked_domains"]),
+                "client_lookups": {k: dict(v) for k, v in _DEFAULT_STATE["client_lookups"].items()},
+                "client_blocks": {k: dict(v) for k, v in _DEFAULT_STATE["client_blocks"].items()},
+            }
 
     def _state_path(self, name):
         return os.path.join(_MOCK_STATE_DIR, f"dns_{name}.json")
@@ -69,9 +87,15 @@ class MockDnsLog(DnsLogBase):
                 self._state = json.load(f)
         else:
             self._state = {
-                "lookups": dict(_DEFAULT_STATE["lookups"]),
-                "blocks": dict(_DEFAULT_STATE["blocks"]),
+                k: (dict(v) if isinstance(v, dict) and all(isinstance(x, dict) for x in v.values())
+                    else dict(v) if isinstance(v, dict) else v)
+                for k, v in _DEFAULT_STATE.items()
             }
+            # deep-copy nested dicts in client_lookups/client_blocks
+            self._state["client_lookups"] = {
+                k: dict(v) for k, v in _DEFAULT_STATE["client_lookups"].items()}
+            self._state["client_blocks"] = {
+                k: dict(v) for k, v in _DEFAULT_STATE["client_blocks"].items()}
 
     def _save_state(self):
         if self._name is None:
@@ -89,6 +113,13 @@ class MockDnsLog(DnsLogBase):
             for ip, count in sorted(data.items(), key=lambda kv: (-kv[1], kv[0]))
         ]
 
+    @staticmethod
+    def _sorted_domain_counts(data: Dict[str, int]) -> List[Dict[str, Any]]:
+        return [
+            {"domain": domain, "count": count}
+            for domain, count in sorted(data.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
     def get_dns_lookups(self, conn, period: str) -> List[Dict[str, Any]]:
         # validate period even though the mock ignores it
         period_seconds(period)
@@ -97,3 +128,17 @@ class MockDnsLog(DnsLogBase):
     def get_dns_blocks(self, conn, period: str) -> List[Dict[str, Any]]:
         period_seconds(period)
         return self._sorted_counts(self._state.get("blocks", {}))
+
+    def get_dns_blocks_by_domain(self, conn, period: str) -> List[Dict[str, Any]]:
+        period_seconds(period)
+        return self._sorted_domain_counts(self._state.get("blocked_domains", {}))
+
+    def get_dns_lookups_for_client(self, conn, period: str, client_ip: str) -> List[Dict[str, Any]]:
+        period_seconds(period)
+        return self._sorted_domain_counts(
+            self._state.get("client_lookups", {}).get(client_ip, {}))
+
+    def get_dns_blocks_for_client(self, conn, period: str, client_ip: str) -> List[Dict[str, Any]]:
+        period_seconds(period)
+        return self._sorted_domain_counts(
+            self._state.get("client_blocks", {}).get(client_ip, {}))

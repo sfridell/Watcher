@@ -668,6 +668,10 @@ def get_args(argv=sys.argv[1:]):
     dnslog_lookups_cmd.add_argument("--pin", type=str, default=None,
                                     help="PIN to decrypt an encrypted API key "
                                          "(only needed if --pin was used with 'set')")
+    dnslog_lookups_cmd.add_argument("--client", type=str, default=None,
+                                    help="Filter to a specific client IP; shows top domains for that client")
+    dnslog_lookups_cmd.add_argument("--limit", type=int, default=10,
+                                    help="Max domains to show with --client (default 10)")
 
     dnslog_blocks_cmd = dnslog_commands.add_parser('blocks')
     dnslog_blocks_cmd.add_argument("--connection", type=str, required=True)
@@ -676,6 +680,20 @@ def get_args(argv=sys.argv[1:]):
     dnslog_blocks_cmd.add_argument("--pin", type=str, default=None,
                                    help="PIN to decrypt an encrypted API key "
                                         "(only needed if --pin was used with 'set')")
+    dnslog_blocks_cmd.add_argument("--client", type=str, default=None,
+                                   help="Filter to a specific client IP; shows top blocked domains for that client")
+    dnslog_blocks_cmd.add_argument("--limit", type=int, default=10,
+                                   help="Max domains to show with --client (default 10)")
+
+    dnslog_blocked_cmd = dnslog_commands.add_parser('blocked')
+    dnslog_blocked_cmd.add_argument("--connection", type=str, required=True)
+    dnslog_blocked_cmd.add_argument("--period", type=str, default='24h',
+                                    choices=['1h', '24h', '7d'])
+    dnslog_blocked_cmd.add_argument("--pin", type=str, default=None,
+                                    help="PIN to decrypt an encrypted API key "
+                                         "(only needed if --pin was used with 'set')")
+    dnslog_blocked_cmd.add_argument("--limit", type=int, default=20,
+                                    help="Max blocked domains to show (default 20)")
 
     return parser.parse_args(argv)
 
@@ -749,19 +767,32 @@ def _dns_log_query(args, connections, output, kind):
     conn, handler = connections.get_dns_log_handler(args.connection, output, pin=pin)
     if conn is None:
         return
+    client_ip = getattr(args, 'client', None)
+    limit = getattr(args, 'limit', 10)
     try:
-        if kind == 'lookups':
-            data = handler.get_dns_lookups(conn, args.period)
+        if client_ip:
+            if kind == 'lookups':
+                data = handler.get_dns_lookups_for_client(conn, args.period, client_ip)
+            else:
+                data = handler.get_dns_blocks_for_client(conn, args.period, client_ip)
+            headers = ['Domain', 'Count']
+            key = 'domain'
         else:
-            data = handler.get_dns_blocks(conn, args.period)
+            if kind == 'lookups':
+                data = handler.get_dns_lookups(conn, args.period)
+            else:
+                data = handler.get_dns_blocks(conn, args.period)
+            headers = ['IP', 'Count']
+            key = 'ip'
     except Exception as e:
         print(f'ERROR: {e}', file=output)
         return
     if not data:
-        print(f'No DNS {kind} in the last {args.period}.', file=output)
+        label = f' for {client_ip}' if client_ip else ''
+        print(f'No DNS {kind}{label} in the last {args.period}.', file=output)
         return
-    rows = [[d['ip'], d['count']] for d in data]
-    headers = ['IP', 'Count']
+    data = data[:limit]
+    rows = [[d[key], d['count']] for d in data]
     print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
 
 
@@ -773,6 +804,32 @@ def dns_log_lookups(args, connections, output):
 def dns_log_blocks(args, connections, output):
     """List per-client DNS block counts for the given period."""
     _dns_log_query(args, connections, output, 'blocks')
+
+
+def dns_log_blocked(args, connections, output):
+    """List DNS blocks indexed by the blocked domain."""
+    pin = getattr(args, 'pin', None)
+    entry = connections.get_dns_log(args.connection)
+    needs_pin = bool(entry) and entry.get('type') != 'mock' and 'encrypted_apikey' in entry
+    if needs_pin and not pin:
+        import getpass
+        pin = getpass.getpass('PIN: ')
+    conn, handler = connections.get_dns_log_handler(args.connection, output, pin=pin)
+    if conn is None:
+        return
+    try:
+        data = handler.get_dns_blocks_by_domain(conn, args.period)
+    except Exception as e:
+        print(f'ERROR: {e}', file=output)
+        return
+    if not data:
+        print(f'No DNS blocks in the last {args.period}.', file=output)
+        return
+    limit = getattr(args, 'limit', 20)
+    data = data[:limit]
+    rows = [[d['domain'], d['count']] for d in data]
+    headers = ['Blocked Domain', 'Count']
+    print(tabulate(rows, headers=headers, tablefmt='simple'), file=output)
 
 
 def process_command(argv=sys.argv[1:]):
@@ -864,6 +921,8 @@ def process_command(argv=sys.argv[1:]):
             dns_log_lookups(args, connections, output)
         elif args.dnslog_command == 'blocks':
             dns_log_blocks(args, connections, output)
+        elif args.dnslog_command == 'blocked':
+            dns_log_blocked(args, connections, output)
 
     return output
 

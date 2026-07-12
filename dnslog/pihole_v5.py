@@ -206,6 +206,46 @@ class PiHoleV5DnsLog(DnsLogBase):
             counts[client] = counts.get(client, 0) + 1
         return counts
 
+    @staticmethod
+    def _aggregate_by_domain(rows, blocked: bool, from_ts: int, until_ts: int,
+                              client_keys=None) -> Dict[str, int]:
+        """Aggregate query rows by domain (column 2).
+
+        If ``client_keys`` is a set, only rows whose client field (column 3)
+        matches one of the keys are included.
+        """
+        counts: Dict[str, int] = {}
+        for r in rows:
+            if not r or len(r) < 5:
+                continue
+            try:
+                ts = int(float(r[0]))
+            except (TypeError, ValueError):
+                continue
+            if ts < from_ts or ts > until_ts:
+                continue
+            status = r[4]
+            is_blocked = status in BLOCKED_STATUSES
+            if is_blocked != blocked:
+                continue
+            if client_keys is not None and r[3] not in client_keys:
+                continue
+            domain = r[2]
+            if not domain:
+                continue
+            counts[domain] = counts.get(domain, 0) + 1
+        return counts
+
+    @staticmethod
+    def _build_ip_to_names(top_sources: Dict[str, int]) -> Dict[str, Set[str]]:
+        """Reverse map: IP → set of hostnames seen in topClients."""
+        ip_to_names: Dict[str, Set[str]] = {}
+        for key in top_sources.keys():
+            if "|" in key:
+                name, ip = key.rsplit("|", 1)
+                ip_to_names.setdefault(ip, set()).add(name)
+        return ip_to_names
+
     # -- public interface -----------------------------------------------
     def _query(self, conn, period: str, blocked: bool) -> List[Dict[str, Any]]:
         now = int(time.time())
@@ -237,3 +277,49 @@ class PiHoleV5DnsLog(DnsLogBase):
 
     def get_dns_blocks(self, conn, period: str) -> List[Dict[str, Any]]:
         return self._query(conn, period, blocked=True)
+
+    def get_dns_blocks_by_domain(self, conn, period: str) -> List[Dict[str, Any]]:
+        now = int(time.time())
+        period_s = period_seconds(period)
+        from_ts = now - period_s
+        until_ts = now
+        payload = self._api_get(conn, {"getAllQueries": FETCH_LENGTH})
+        rows = payload.get("data", []) or []
+        domain_counts = self._aggregate_by_domain(rows, True, from_ts, until_ts)
+        return [
+            {"domain": d, "count": c}
+            for d, c in sorted(domain_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+    def _query_for_client(self, conn, period: str, blocked: bool, client_ip: str):
+        now = int(time.time())
+        period_s = period_seconds(period)
+        from_ts = now - period_s
+        until_ts = now
+
+        payload = self._api_get(conn, {"getAllQueries": FETCH_LENGTH})
+        rows = payload.get("data", []) or []
+
+        # Build IP→hostname reverse map so we can match client_ip against
+        # the hostname column (column 3) in getAllQueries rows.
+        client_keys = {client_ip}
+        try:
+            tc = self._api_get(conn, {"topClients": "0"})
+            top_sources = tc.get("top_sources", {}) or {}
+            ip_to_names = self._build_ip_to_names(top_sources)
+            client_keys |= ip_to_names.get(client_ip, set())
+        except Exception:
+            pass
+
+        domain_counts = self._aggregate_by_domain(
+            rows, blocked, from_ts, until_ts, client_keys=client_keys)
+        return [
+            {"domain": d, "count": c}
+            for d, c in sorted(domain_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+    def get_dns_lookups_for_client(self, conn, period: str, client_ip: str):
+        return self._query_for_client(conn, period, False, client_ip)
+
+    def get_dns_blocks_for_client(self, conn, period: str, client_ip: str):
+        return self._query_for_client(conn, period, True, client_ip)

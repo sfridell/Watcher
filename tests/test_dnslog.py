@@ -540,5 +540,176 @@ class TestPiHoleV5Http(unittest.TestCase):
         self.assertIn("web login failed", str(ctx.exception))
 
 
+class TestMockDnsLogDomains(unittest.TestCase):
+    def test_blocks_by_domain(self):
+        h = MockDnsLog()
+        result = h.get_dns_blocks_by_domain(None, '24h')
+        by_domain = {d['domain']: d['count'] for d in result}
+        self.assertEqual(by_domain['ads.evil.com'], 50)
+        self.assertEqual(by_domain['tracker.net'], 30)
+        self.assertEqual(by_domain['malware.org'], 10)
+        # sorted desc
+        counts = [d['count'] for d in result]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_lookups_for_client(self):
+        h = MockDnsLog()
+        result = h.get_dns_lookups_for_client(None, '24h', '192.168.1.10')
+        by_domain = {d['domain']: d['count'] for d in result}
+        self.assertEqual(by_domain, {'google.com': 80, 'facebook.com': 62})
+
+    def test_blocks_for_client(self):
+        h = MockDnsLog()
+        result = h.get_dns_blocks_for_client(None, '24h', '192.168.1.10')
+        by_domain = {d['domain']: d['count'] for d in result}
+        self.assertEqual(by_domain, {'ads.evil.com': 8, 'tracker.net': 4})
+
+    def test_lookups_for_client_empty(self):
+        h = MockDnsLog()
+        result = h.get_dns_lookups_for_client(None, '24h', '10.0.0.99')
+        self.assertEqual(result, [])
+
+
+class TestPiHoleV5DomainAggregation(unittest.TestCase):
+    def test_aggregate_by_domain_blocks(self):
+        h = PiHoleV5DnsLog()
+        ts = int(time.time()) - 5
+        rows = [
+            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
+            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
+            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
+            [str(ts), "A", "ok.com", "MPhone", "2", "0"],  # not blocked
+        ]
+        counts = h._aggregate_by_domain(rows, True, 0, int(time.time()) + 100)
+        self.assertEqual(counts, {"ads.evil.com": 2, "tracker.net": 1})
+
+    def test_aggregate_by_domain_client_filter(self):
+        h = PiHoleV5DnsLog()
+        ts = int(time.time()) - 5
+        rows = [
+            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
+            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
+            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
+        ]
+        # filter to MPhone only
+        counts = h._aggregate_by_domain(rows, True, 0, int(time.time()) + 100,
+                                         client_keys={"MPhone"})
+        self.assertEqual(counts, {"ads.evil.com": 1, "tracker.net": 1})
+
+    def test_build_ip_to_names_reverse_map(self):
+        top_sources = {"MPhone|1.2.3.4": 10, "MLaptop|1.2.3.4": 5, "rokuPP|5.6.7.8": 3}
+        ip_to_names = PiHoleV5DnsLog._build_ip_to_names(top_sources)
+        self.assertEqual(ip_to_names["1.2.3.4"], {"MPhone", "MLaptop"})
+        self.assertEqual(ip_to_names["5.6.7.8"], {"rokuPP"})
+
+    def test_blocks_by_domain_via_http(self):
+        ts = int(time.time()) - 5
+        rows = [
+            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
+            [str(ts), "A", "ads.evil.com", "roku", "1", "0"],
+            [str(ts), "A", "tracker.net", "MPhone", "5", "0"],
+        ]
+        h = PiHoleV5DnsLog()
+        h._session = _FakeSession()
+        h._base_url = "http://192.168.12.50:8080"
+        h._session.set_post([])
+        h._session.set_get([_FakeResp(200, {"data": rows})])
+        result = h.get_dns_blocks_by_domain({"apikey": "pw"}, "24h")
+        by_domain = {d['domain']: d['count'] for d in result}
+        self.assertEqual(by_domain, {"ads.evil.com": 2, "tracker.net": 1})
+
+    def test_blocks_for_client_via_http(self):
+        ts = int(time.time()) - 5
+        rows = [
+            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
+            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
+            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
+        ]
+        h = PiHoleV5DnsLog()
+        h._session = _FakeSession()
+        h._base_url = "http://192.168.12.50:8080"
+        conn = {"apikey": "pw"}
+        h._session.set_post([])
+        h._session.set_get([
+            _FakeResp(200, {"data": rows}),
+            _FakeResp(200, {"top_sources": {"MPhone|1.2.3.4": 10, "rokuPP|5.6.7.8": 5}}),
+        ])
+        result = h.get_dns_blocks_for_client(conn, "24h", "1.2.3.4")
+        by_domain = {d['domain']: d['count'] for d in result}
+        # only MPhone queries (matched via IP→hostname reverse map)
+        self.assertEqual(by_domain, {"ads.evil.com": 1, "tracker.net": 1})
+
+
+class TestPiHoleV6DomainAggregation(unittest.TestCase):
+    def test_aggregate_by_domain(self):
+        queries = [
+            {"domain": "ads.evil", "status": "GRAVITY", "client": {"ip": "10.0.0.1"}},
+            {"domain": "ads.evil", "status": "GRAVITY", "client": {"ip": "10.0.0.2"}},
+            {"domain": "ok.com", "status": "FORWARDED", "client": {"ip": "10.0.0.1"}},
+        ]
+        result = PiHoleDnsLog._aggregate_by_domain(queries, blocked=True)
+        self.assertEqual(result, [{"domain": "ads.evil", "count": 2}])
+
+    def test_aggregate_by_domain_client_filter(self):
+        queries = [
+            {"domain": "ads.evil", "status": "GRAVITY", "client": {"ip": "10.0.0.1"}},
+            {"domain": "ads.evil", "status": "GRAVITY", "client": {"ip": "10.0.0.2"}},
+            {"domain": "ok.com", "status": "FORWARDED", "client": {"ip": "10.0.0.1"}},
+        ]
+        result = PiHoleDnsLog._aggregate_by_domain(queries, blocked=False, client_ip="10.0.0.1")
+        self.assertEqual(result, [{"domain": "ok.com", "count": 1}])
+
+
+class TestCliBlockedAndClient(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig_cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        with open('connections.json', 'w') as f:
+            json.dump({'r': {'ip': 'mock', 'port': '0',
+                             'username': 'mock', 'router_type': 'mock'}}, f)
+
+    def tearDown(self):
+        os.chdir(self.orig_cwd)
+        shutil.rmtree(self.tmpdir)
+
+    def test_blocked_command(self):
+        watcher.process_command(['dns-log', 'set', '--connection', 'r', '--type', 'mock'])
+        out = watcher.process_command(['dns-log', 'blocked', '--connection', 'r', '--period', '24h'])
+        rows = _table_rows(out)
+        domains = {r[0] for r in rows}
+        self.assertIn('ads.evil.com', domains)
+        self.assertIn('tracker.net', domains)
+
+    def test_blocked_limit(self):
+        watcher.process_command(['dns-log', 'set', '--connection', 'r', '--type', 'mock'])
+        out = watcher.process_command(['dns-log', 'blocked', '--connection', 'r', '--limit', '1'])
+        rows = _table_rows(out)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 'ads.evil.com')
+
+    def test_lookups_with_client(self):
+        watcher.process_command(['dns-log', 'set', '--connection', 'r', '--type', 'mock'])
+        out = watcher.process_command([
+            'dns-log', 'lookups', '--connection', 'r',
+            '--client', '192.168.1.10', '--limit', '5',
+        ])
+        rows = _table_rows(out)
+        domains = {r[0] for r in rows}
+        self.assertIn('google.com', domains)
+        self.assertIn('facebook.com', domains)
+
+    def test_blocks_with_client(self):
+        watcher.process_command(['dns-log', 'set', '--connection', 'r', '--type', 'mock'])
+        out = watcher.process_command([
+            'dns-log', 'blocks', '--connection', 'r',
+            '--client', '192.168.1.10', '--limit', '5',
+        ])
+        rows = _table_rows(out)
+        domains = {r[0] for r in rows}
+        self.assertIn('ads.evil.com', domains)
+        self.assertIn('tracker.net', domains)
+
+
 if __name__ == '__main__':
     unittest.main()

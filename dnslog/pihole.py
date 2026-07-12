@@ -174,6 +174,28 @@ class PiHoleDnsLog(DnsLogBase):
             for ip, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
         ]
 
+    @staticmethod
+    def _aggregate_by_domain(queries, blocked: bool, client_ip=None) -> List[Dict[str, Any]]:
+        counts: Dict[str, int] = {}
+        for q in queries:
+            status = q.get("status")
+            is_blocked = status in BLOCKED_STATUSES
+            if is_blocked != blocked:
+                continue
+            domain = q.get("domain")
+            if not domain:
+                continue
+            if client_ip is not None:
+                client = q.get("client") or {}
+                ip = client.get("ip")
+                if ip != client_ip:
+                    continue
+            counts[domain] = counts.get(domain, 0) + 1
+        return [
+            {"domain": d, "count": c}
+            for d, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
     # -- public interface --------------------------------------------
     def get_dns_lookups(self, conn, period: str) -> List[Dict[str, Any]]:
         queries = list(self._iter_queries(conn, period))
@@ -182,3 +204,15 @@ class PiHoleDnsLog(DnsLogBase):
     def get_dns_blocks(self, conn, period: str) -> List[Dict[str, Any]]:
         queries = list(self._iter_queries(conn, period))
         return self._aggregate(queries, blocked=True)
+
+    def get_dns_blocks_by_domain(self, conn, period: str) -> List[Dict[str, Any]]:
+        queries = list(self._iter_queries(conn, period))
+        return self._aggregate_by_domain(queries, blocked=True)
+
+    def get_dns_lookups_for_client(self, conn, period: str, client_ip: str) -> List[Dict[str, Any]]:
+        queries = list(self._iter_queries(conn, period))
+        return self._aggregate_by_domain(queries, blocked=False, client_ip=client_ip)
+
+    def get_dns_blocks_for_client(self, conn, period: str, client_ip: str) -> List[Dict[str, Any]]:
+        queries = list(self._iter_queries(conn, period))
+        return self._aggregate_by_domain(queries, blocked=True, client_ip=client_ip)
