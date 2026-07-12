@@ -63,6 +63,9 @@ RUN \
 
 RUN \
   python3 -m pip install --upgrade tabulate
+
+RUN \
+  python3 -m pip install --upgrade requests
   
 RUN \
   mkdir /home/pydevel/.ssh && chown pydevel /home/pydevel/.ssh && chmod 755 /home/pydevel/.ssh

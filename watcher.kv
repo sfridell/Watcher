@@ -165,6 +165,12 @@
                 height: dp(48)
                 on_press: root.show_vpn_status()
 
+            MDRectangleFlatButton:
+                text: 'DNS'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_dns()
+
 <ConfigureScreen>:
     MDBoxLayout:
         orientation: 'vertical'
@@ -203,6 +209,12 @@
                 size_hint_y: None
                 height: dp(48)
                 on_press: root.show_vpn_config()
+
+            MDRectangleFlatButton:
+                text: 'DNS Settings'
+                size_hint_y: None
+                height: dp(48)
+                on_press: root.show_dns_settings()
 
 <ClientsScreen>:
     MDBoxLayout:
@@ -1102,4 +1114,192 @@
 
                     MDFlatButton:
                         text: 'Cancel'
+                        on_press: root.go_back()
+
+<DnsMonitorScreen>:
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+            right_action_items: [['cog', lambda x: root.show_settings(), 'DNS Settings']]
+
+        MDBoxLayout:
+            orientation: 'vertical'
+            padding: dp(10)
+            spacing: dp(8)
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(5)
+
+                Spinner:
+                    id: query_spinner
+                    text: 'Lookups'
+                    values: ['Lookups', 'Blocks', 'Blocked Domains']
+                    size_hint_x: 0.30
+                    font_size: '14sp'
+
+                Spinner:
+                    id: period_spinner
+                    text: '24h'
+                    values: ['1h', '24h', '7d']
+                    size_hint_x: 0.20
+                    font_size: '14sp'
+
+                MDTextField:
+                    id: client_field
+                    hint_text: 'Client IP (optional)'
+                    size_hint_x: 0.35
+                    font_size: '14sp'
+
+                MDTextField:
+                    id: limit_field
+                    hint_text: 'Limit'
+                    text: '20'
+                    size_hint_x: 0.15
+                    input_filter: 'int'
+                    font_size: '14sp'
+
+            MDTextField:
+                id: pin_field
+                hint_text: 'PIN (only if encrypted)'
+                password: True
+                size_hint_y: None
+                height: dp(40)
+                font_size: '14sp'
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+
+                MDRaisedButton:
+                    text: 'Load'
+                    on_press: root.load_data()
+
+                MDFlatButton:
+                    text: 'Back'
+                    on_press: root.go_back()
+
+            MDLabel:
+                id: status_label
+                text: ''
+                size_hint_y: None
+                height: dp(20)
+                font_style: 'Caption'
+                theme_text_color: 'Secondary'
+
+            ScrollView:
+                MDBoxLayout:
+                    id: data_layout
+                    orientation: 'vertical'
+                    size_hint_y: None
+                    spacing: dp(2)
+                    height: self.minimum_height
+
+<DnsSettingsScreen>:
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        MDTopAppBar:
+            id: toolbar
+            title: ''
+            left_action_items: [['arrow-left', lambda x: root.go_back()]]
+
+        ScrollView:
+            MDBoxLayout:
+                orientation: 'vertical'
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(10)
+                spacing: dp(10)
+
+                MDLabel:
+                    id: current_label
+                    text: ''
+                    size_hint_y: None
+                    height: dp(40)
+                    font_style: 'Body1'
+                    theme_text_color: 'Secondary'
+
+                MDLabel:
+                    text: 'Type:'
+                    size_hint_y: None
+                    height: dp(30)
+                    font_style: 'Caption'
+
+                Spinner:
+                    id: dns_type
+                    text: 'pihole_v5'
+                    values: ['pihole', 'pihole_v5', 'mock']
+                    size_hint_y: None
+                    height: dp(48)
+                    font_size: '14sp'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'IP:'
+                        size_hint_x: 0.2
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: dns_ip
+                        size_hint_x: 0.8
+                        hint_text: 'e.g. 192.168.12.50:8080'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'API Key:'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: dns_apikey
+                        size_hint_x: 0.7
+                        hint_text: 'API token or web password'
+                        password: True
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(5)
+
+                    MDLabel:
+                        text: 'PIN (opt):'
+                        size_hint_x: 0.3
+                        font_style: 'Body1'
+
+                    MDTextField:
+                        id: dns_pin
+                        size_hint_x: 0.7
+                        hint_text: 'Encrypt key at rest (optional)'
+                        password: True
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(10)
+
+                    MDRaisedButton:
+                        text: 'Save'
+                        on_press: root.save()
+
+                    MDRaisedButton:
+                        text: 'Remove'
+                        on_press: root.clear()
+
+                    MDFlatButton:
+                        text: 'Back'
                         on_press: root.go_back()

@@ -315,6 +315,10 @@ class StatusScreen(Screen):
         self.manager.get_screen('vpn_status').set_connection(self.connection_name)
         self.manager.current = 'vpn_status'
 
+    def show_dns(self):
+        self.manager.get_screen('dns_monitor').set_connection(self.connection_name)
+        self.manager.current = 'dns_monitor'
+
     def show_configure(self):
         self.manager.get_screen('configure').set_connection(self.connection_name)
         self.manager.current = 'configure'
@@ -345,6 +349,10 @@ class ConfigureScreen(Screen):
     def show_vpn_config(self):
         self.manager.get_screen('vpn_config_list').set_connection(self.connection_name)
         self.manager.current = 'vpn_config_list'
+
+    def show_dns_settings(self):
+        self.manager.get_screen('dns_settings').set_connection(self.connection_name)
+        self.manager.current = 'dns_settings'
 
     def show_status(self):
         self.manager.get_screen('status').set_connection(self.connection_name)
@@ -1700,6 +1708,256 @@ class VpnConfigEditScreen(Screen):
         dialog.open()
 
 
+class DnsMonitorScreen(Screen):
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.toolbar.title = f'DNS Monitor - {conn_name}'
+
+    def on_enter(self):
+        if not self.ids.data_layout.children:
+            self.ids.status_label.text = 'Select a query and tap Load'
+
+    def _get_handler(self):
+        entry = connectiondb.ConnectionDB().get_dns_log(self.connection_name)
+        if not entry:
+            self.show_error('No DNS-log endpoint configured. Use DNS Settings to add one.')
+            return None, None, None
+        pin = None
+        if 'encrypted_apikey' in entry:
+            pin = self.ids.pin_field.text.strip()
+            if not pin:
+                self.show_error('PIN is required for this encrypted endpoint')
+                return None, None, None
+        db = connectiondb.ConnectionDB()
+        out = io.StringIO()
+        conn, handler = db.get_dns_log_handler(self.connection_name, out, pin=pin)
+        if conn is None:
+            self.show_error(out.getvalue().strip() or 'Failed to get DNS handler')
+            return None, None, None
+        return conn, handler, db
+
+    def load_data(self):
+        conn, handler, db = self._get_handler()
+        if conn is None:
+            return
+        query = self.ids.query_spinner.text
+        period = self.ids.period_spinner.text
+        client_ip = self.ids.client_field.text.strip() or None
+        limit = int(self.ids.limit_field.text or '20')
+        try:
+            if client_ip and query == 'Lookups':
+                data = handler.get_dns_lookups_for_client(conn, period, client_ip)
+                headers = ['Domain', 'Count']
+                key = 'domain'
+            elif client_ip and query == 'Blocks':
+                data = handler.get_dns_blocks_for_client(conn, period, client_ip)
+                headers = ['Domain', 'Count']
+                key = 'domain'
+            elif query == 'Lookups':
+                data = handler.get_dns_lookups(conn, period)
+                headers = ['IP', 'Count']
+                key = 'ip'
+            elif query == 'Blocks':
+                data = handler.get_dns_blocks(conn, period)
+                headers = ['IP', 'Count']
+                key = 'ip'
+            elif query == 'Blocked Domains':
+                data = handler.get_dns_blocks_by_domain(conn, period)
+                headers = ['Domain', 'Count']
+                key = 'domain'
+            else:
+                self.show_error(f'Unknown query: {query}')
+                return
+        except Exception as e:
+            self.show_error(f'Query failed: {e}')
+            return
+        self.ids.data_layout.clear_widgets()
+        if not data:
+            self.ids.status_label.text = f'No {query} in the last {period}'
+            return
+        data = data[:limit]
+        row = MDBoxLayout(size_hint_y=None, height=dp(30), spacing=dp(2))
+        row.add_widget(MDLabel(text=headers[0], font_style='Caption', size_hint_x=0.7, bold=True))
+        row.add_widget(MDLabel(text=headers[1], font_style='Caption', size_hint_x=0.3, bold=True))
+        self.ids.data_layout.add_widget(row)
+        for d in data:
+            row = MDBoxLayout(size_hint_y=None, height=dp(28), spacing=dp(2))
+            row.add_widget(MDLabel(text=str(d[key]), font_style='Caption', size_hint_x=0.7))
+            row.add_widget(MDLabel(text=str(d['count']), font_style='Caption', size_hint_x=0.3))
+            self.ids.data_layout.add_widget(row)
+        self.ids.status_label.text = f'{len(data)} entries'
+
+    def show_settings(self):
+        self.manager.get_screen('dns_settings').set_connection(self.connection_name)
+        self.manager.current = 'dns_settings'
+
+    def go_back(self):
+        self.manager.current = 'status'
+
+    def show_error(self, message):
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(title='Error', text=message, buttons=[ok_button])
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
+
+
+class DnsSettingsScreen(Screen):
+    connection_name = StringProperty('')
+
+    def set_connection(self, conn_name):
+        self.connection_name = conn_name
+        self.ids.toolbar.title = f'DNS Settings - {conn_name}'
+
+    def on_enter(self):
+        self._load_current()
+
+    def _load_current(self):
+        try:
+            db = connectiondb.ConnectionDB()
+            entry = db.get_dns_log(self.connection_name)
+            if not entry:
+                self.ids.current_label.text = 'No DNS-log endpoint configured'
+                self.ids.dns_type.text = 'pihole_v5'
+                self.ids.dns_ip.text = ''
+                self.ids.dns_apikey.text = ''
+                self.ids.dns_pin.text = ''
+                return
+            type_str = entry.get('type', '')
+            ip_str = entry.get('ip', '')
+            encrypted = 'encrypted_apikey' in entry
+            self.ids.current_label.text = (
+                f'Type: {type_str}  IP: {ip_str}  '
+                f'Key: {"encrypted" if encrypted else "plaintext"}'
+            )
+            self.ids.dns_type.text = type_str
+            self.ids.dns_ip.text = ip_str
+            self.ids.dns_apikey.text = ''
+            self.ids.dns_pin.text = ''
+        except Exception as e:
+            self.show_error(f'Failed to load: {e}')
+
+    def save(self):
+        dns_type = self.ids.dns_type.text
+        ip = self.ids.dns_ip.text.strip()
+        if not ip:
+            self.show_error('IP address is required')
+            return
+        db = connectiondb.ConnectionDB()
+        new_apikey = self.ids.dns_apikey.text.strip()
+        pin = self.ids.dns_pin.text.strip() if self.ids.dns_pin.text.strip() else None
+
+        # If no new API key entered, keep the existing one
+        if not new_apikey:
+            entry = db.get_dns_log(self.connection_name)
+            if not entry and dns_type != 'mock':
+                self.show_error('API key is required for non-mock types')
+                return
+            if dns_type == 'mock':
+                def confirm_keep(instance):
+                    dialog.dismiss()
+                    try:
+                        db.set_dns_log(
+                            self.connection_name,
+                            dns_type=dns_type,
+                            ip=ip,
+                            apikey=None,
+                            pin=None,
+                        )
+                        self._load_current()
+                    except Exception as e:
+                        self.show_error(f'Failed to save: {e}')
+            else:
+                # reuse the existing key from disk (plaintext) - keep as-is or re-encrypt
+                def confirm_keep(instance):
+                    dialog.dismiss()
+                    existing_entry = db.get_dns_log(self.connection_name)
+                    old_apikey = existing_entry.get('apikey')
+                    if not old_apikey:
+                        self.show_error('Existing key is encrypted — re-enter the API key to save')
+                        return
+                    try:
+                        db.set_dns_log(
+                            self.connection_name,
+                            dns_type=dns_type,
+                            ip=ip,
+                            apikey=old_apikey,
+                            pin=pin,
+                        )
+                        self._load_current()
+                    except Exception as e:
+                        self.show_error(f'Failed to save: {e}')
+
+            apply_btn = MDRaisedButton(text='Save')
+            cancel_btn = MDFlatButton(text='Cancel')
+            apply_btn.bind(on_press=confirm_keep)
+            cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+            dialog = MDDialog(
+                title='Save DNS Log Settings',
+                text=f'Set {dns_type} at {ip} for {self.connection_name}?\n'
+                     f'(API key unchanged — re-enter key to replace)',
+                buttons=[apply_btn, cancel_btn]
+            )
+            dialog.open()
+            return
+
+        def confirm(instance):
+            dialog.dismiss()
+            try:
+                db.set_dns_log(
+                    self.connection_name,
+                    dns_type=dns_type,
+                    ip=ip,
+                    apikey=new_apikey,
+                    pin=pin,
+                )
+                self._load_current()
+            except Exception as e:
+                self.show_error(f'Failed to save: {e}')
+
+        apply_btn = MDRaisedButton(text='Save')
+        cancel_btn = MDFlatButton(text='Cancel')
+        apply_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+        dialog = MDDialog(
+            title='Save DNS Log Settings',
+            text=f'Set {dns_type} at {ip} for {self.connection_name}?',
+            buttons=[apply_btn, cancel_btn]
+        )
+        dialog.open()
+
+    def clear(self):
+        def confirm(instance):
+            dialog.dismiss()
+            try:
+                db = connectiondb.ConnectionDB()
+                db.delete_dns_log(self.connection_name)
+                self._load_current()
+            except Exception as e:
+                self.show_error(f'Failed to clear: {e}')
+
+        delete_btn = MDRaisedButton(text='Remove')
+        cancel_btn = MDFlatButton(text='Cancel')
+        delete_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+        dialog = MDDialog(
+            title='Remove DNS Log',
+            text=f'Remove DNS-log endpoint from {self.connection_name}?',
+            buttons=[delete_btn, cancel_btn]
+        )
+        dialog.open()
+
+    def go_back(self):
+        self.manager.current = 'dns_monitor'
+
+    def show_error(self, message):
+        ok_button = MDFlatButton(text='OK')
+        dialog = MDDialog(title='Error', text=message, buttons=[ok_button])
+        ok_button.bind(on_press=lambda x: dialog.dismiss())
+        dialog.open()
+
+
 class WatcherScreenManager(ScreenManager):
     def on_touch_down(self, touch):
         if self.transition.is_active:
@@ -1747,6 +2005,8 @@ class WatcherApp(MDApp):
         sm.add_widget(VpnStatusScreen(name='vpn_status'))
         sm.add_widget(VpnConfigListScreen(name='vpn_config_list'))
         sm.add_widget(VpnConfigEditScreen(name='vpn_config_edit'))
+        sm.add_widget(DnsMonitorScreen(name='dns_monitor'))
+        sm.add_widget(DnsSettingsScreen(name='dns_settings'))
         return sm
 
 
