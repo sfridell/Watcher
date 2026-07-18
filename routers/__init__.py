@@ -2,10 +2,13 @@ from typing import Dict, Optional, Type
 from .base import RouterBase
 from .ddwrt import DDWRTRouter
 from .mock import MockRouter
+from .openwrt import OpenWrtRouter
 
 ROUTER_HANDLERS: Dict[str, Type[RouterBase]] = {
     "ddwrt_v3_netgear_r7000": DDWRTRouter,
     "ddwrt": DDWRTRouter,
+    "openwrt": OpenWrtRouter,
+    "openwrt_x86": OpenWrtRouter,
     "mock": MockRouter,
 }
 

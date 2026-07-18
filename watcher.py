@@ -513,7 +513,7 @@ def get_args(argv=sys.argv[1:]):
     parser_connections_new.add_argument("--username", type=str)
     parser_connections_new.add_argument("--pw", type=str)
     parser_connections_new.add_argument("--router-type", type=str, default='ddwrt',
-                                         help="Router type (e.g., ddwrt, ddwrt_v3_netgear_r7000, mock)")
+                                         help="Router type (e.g., ddwrt, ddwrt_v3_netgear_r7000, openwrt, openwrt_x86, mock)")
     parser_connections_config = parser_connections_commands.add_parser('config')
     parser_connections_config.add_argument("--action",
                                            type=str,

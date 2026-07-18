@@ -120,11 +120,6 @@ class QEMUManager:
             check=True,
         )
         return base_qcow2
-        subprocess.run(
-            ["qemu-img", "convert", "-O", "qcow2", str(raw_image), str(base_qcow2)],
-            check=True,
-        )
-        return base_qcow2
 
     def create_overlay(self, router_name):
         """Create a QCOW2 overlay on top of the base image for test isolation."""
@@ -150,8 +145,14 @@ class QEMUManager:
         )
         return overlay
 
-    def start_vm(self, router_name):
-        """Start a QEMU VM with the overlay image and port forwarding. Returns the Popen process."""
+    def start_vm(self, router_name, serial_sock=None):
+        """Start a QEMU VM with the overlay image and port forwarding. Returns the Popen process.
+
+        If ``serial_sock`` is given, the guest's ttyS0 serial port is exposed
+        as a QEMU Unix-socket server at that path (mode ``server,nowait``),
+        so callers can drive the first-boot BusyBox getty interactively
+        (used by OpenWrt 23.05 which ships no busybox-telnetd).
+        """
         self._check_kvm()
 
         _, _, overlay = self._image_paths(router_name)
@@ -181,6 +182,10 @@ class QEMUManager:
             "-display", "none",
             "-monitor", "stdio",
         ]
+        if serial_sock:
+            if os.path.exists(serial_sock):
+                os.unlink(serial_sock)
+            cmd.extend(["-serial", f"unix:{serial_sock},server,nowait"])
 
         print(f"Starting QEMU VM: {' '.join(cmd)}")
         proc = subprocess.Popen(
@@ -217,7 +222,95 @@ class QEMUManager:
 
         raise TimeoutError(f"SSH not available on {host}:{port} within {timeout}s")
 
-    def provision_keys(self, name, host, port, username, password):
+    def serial_set_password(self, serial_sock, password, timeout=60):
+        """Set the root password on a fresh OpenWrt image via its first-boot
+        ttyS0 serial console.
+
+        OpenWrt runs a no-password BusyBox getty on ttyS0 on first boot
+        (displaying "Please press Enter to activate this console."). This
+        drives that getty over a QEMU Unix-socket serial port to run
+        ``printf "<pw>\\n<pw>\\n" | passwd``, since OpenWrt 23.05 x86/64
+        ships neither busybox-telnetd, chpasswd, nor mkpasswd, and dropbear
+        rejects blank-password SSH logins by default. BusyBox's ``passwd``
+        DOES accept passwords from stdin (after emitting "New password:"
+        and "Retype password:" prompts).
+
+        Call AFTER ``wait_for_ssh`` has confirmed the VM is fully booted
+        (dropbear is the last service started by procd).
+        """
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        deadline = time.time() + 30
+        while not os.path.exists(serial_sock) and time.time() < deadline:
+            time.sleep(0.2)
+        if not os.path.exists(serial_sock):
+            raise FileNotFoundError(
+                f"Serial socket {serial_sock} never appeared; "
+                "is the VM running with serial_sock= set?"
+            )
+        sock.connect(serial_sock)
+
+        prompt = b":/#"
+
+        def wait_for_prompt(deadline):
+            buf = b""
+            while prompt not in buf and time.time() < deadline:
+                try:
+                    chunk = sock.recv(4096)
+                    if chunk:
+                        buf += chunk
+                except socket.timeout:
+                    # If the shell is dormant, nudge it with an Enter.
+                    sock.sendall(b"\n")
+            return buf
+
+        try:
+            # Drain any pending boot output.
+            sock.settimeout(1)
+            try:
+                while True:
+                    if not sock.recv(65536):
+                        break
+            except socket.timeout:
+                pass
+
+            # Activate the getty (requires Enter) and wait for the BusyBox prompt.
+            sock.settimeout(2)
+            sock.sendall(b"\n")
+            buf = wait_for_prompt(time.time() + timeout)
+            if prompt not in buf:
+                raise RuntimeError(
+                    f"No BusyBox prompt on serial console {serial_sock} "
+                    f"within {timeout}s (last buf: {buf[-200:]!r})"
+                )
+
+            # Drain any extra prompt echoes, then send the password-change
+            # command. printf escapes \\n to actual newlines so BusyBox
+            # passwd receives both the new and confirm passwords.
+            sock.settimeout(0.5)
+            try:
+                while True:
+                    if not sock.recv(65536):
+                        break
+            except socket.timeout:
+                pass
+
+            pw = password.encode()
+            cmd = b'printf "' + pw + b'\\n' + pw + b'\\n" | passwd\n'
+            sock.settimeout(2)
+            sock.sendall(cmd)
+            buf = wait_for_prompt(time.time() + 15)
+            if prompt not in buf:
+                print(f"WARNING: prompt not seen after passwd "
+                      f"(buf: {buf[-200:]!r})")
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+        print(f"Root password set via serial console at {serial_sock}")
+
+    def provision_keys(self, name, host, port, username, password, router_type="ddwrt"):
         """Provision SSH key-based auth on the router using password login."""
         import connectiondb
 
@@ -229,11 +322,12 @@ class QEMUManager:
                 "ip": host,
                 "port": str(port),
                 "username": username,
-                "router_type": "ddwrt",
+                "router_type": router_type,
             }
             cdb._save_connections()
 
-        cdb.provision_ssh_keys(name, host, str(port), username, password, output_stream)
+        cdb.provision_ssh_keys(name, host, str(port), username, password, output_stream,
+                              router_type=router_type)
         print(output_stream.getvalue())
 
     def get_connection(self, name, host, port):

@@ -24,10 +24,25 @@ python3 -c "import fabric; import pytest" 2>/dev/null || {
     exit 1
 }
 
+# Use python3 -m pytest so we don't depend on pytest being on PATH
+# (common in venv/pipx setups where only the module is importable).
+PYTEST="python3 -m pytest"
+
 echo "All prerequisites met. Starting tests..."
 echo ""
 
-pytest tests/test_ddwrt_qemu.py -v --timeout=300 "$@"
+# Allow selecting specific test files via positional args or TEST_FILES env var.
+# If positional args are passed (e.g. ./run_qemu_tests.sh tests/test_openwrt_qemu.py)
+# they take precedence; otherwise default to both router suites (or $TEST_FILES).
+if [ $# -gt 0 ]; then
+    TEST_FILES="$@"
+elif [ -n "${TEST_FILES:-}" ]; then
+    : # use TEST_FILES from env
+else
+    TEST_FILES="tests/test_ddwrt_qemu.py tests/test_openwrt_qemu.py"
+fi
+
+$PYTEST $TEST_FILES -v -s --timeout=300
 exit_code=$?
 
 echo ""
