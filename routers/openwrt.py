@@ -578,3 +578,16 @@ class OpenWrtRouter(RouterBase):
         self._uci_set(conn, "openvpn.client.enabled", "0")
         conn.run("uci commit openvpn", hide=True, warn=True)
         self._stop_service(conn, "openvpn")
+
+    def install_authorized_key(self, conn, pub_key: str):
+        """Append the key to ``~/.ssh/authorized_keys`` (shared helper)
+        and to ``/etc/dropbear/authorized_keys`` (dropbear's default
+        auth-keys path on OpenWrt, since OpenWrt has no NVRAM).
+        """
+        self._install_in_home_ssh(conn, pub_key)
+        conn.run(
+            f'mkdir -p /etc/dropbear '
+            f'&& echo "{pub_key}" >> /etc/dropbear/authorized_keys '
+            f'&& chmod 600 /etc/dropbear/authorized_keys',
+            hide=True,
+        )

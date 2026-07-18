@@ -149,3 +149,31 @@ class RouterBase(ABC):
     def stop_vpn(self, conn):
         """Stop the OpenVPN client on the router."""
         pass
+
+    @abstractmethod
+    def install_authorized_key(self, conn, pub_key: str):
+        """Install a public SSH key on the router so key-based auth works.
+
+        Each adapter owns its router-specific persistence strategy
+        (DD-WRT NVRAM, OpenWrt /etc/dropbear, etc.). The common
+        ``~/.ssh/authorized_keys`` step is provided by
+        ``_install_in_home_ssh`` and should typically be called from
+        the adapter's implementation.
+        """
+        pass
+
+    def _install_in_home_ssh(self, conn, pub_key: str):
+        """Append ``pub_key`` to ``~/.ssh/authorized_keys`` on the router.
+
+        Concrete helper shared by all SSH-backed adapters. Resolves the
+        home directory via ``$HOME`` (falling back to ``/tmp/root`` for
+        embedded routers where root has no real home) and appends the
+        key with permissions tightened to 600.
+        """
+        home_dir = conn.run('echo $HOME', hide=True).stdout.strip() or '/tmp/root'
+        conn.run(
+            f'mkdir -p {home_dir}/.ssh '
+            f'&& echo "{pub_key}" >> {home_dir}/.ssh/authorized_keys '
+            f'&& chmod 600 {home_dir}/.ssh/authorized_keys',
+            hide=True,
+        )

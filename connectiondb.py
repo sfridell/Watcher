@@ -142,14 +142,17 @@ class ConnectionDB:
         and install the public key so SSH key-based auth works on subsequent
         connections.
 
-        DD-WRT routers also get the key stored in NVRAM (``sshd_authorized_keys``)
-        so it survives reboot; OpenWrt routers have no NVRAM, so the key is
-        written to dropbear's ``authorized_keys`` location instead.
+        Router-specific persistence (NVRAM for DD-WRT, /etc/dropbear for
+        OpenWrt) is delegated to the router adapter's ``install_authorized_key``
+        via ``get_router_handler(router_type)``, keeping this method free of
+        any per-router branching.
         """
         self._generate_and_save_key_pair(name)
 
         with open(f"./keyfiles/{name}_rsa.pub", 'r') as f:
             pub_key = f.read().strip()
+
+        handler = get_router_handler(router_type)
 
         conn = Connection(
             host=ip, user=username, port=int(port),
@@ -159,13 +162,7 @@ class ConnectionDB:
             },
         )
         try:
-            if router_type == "ddwrt" or router_type.startswith("ddwrt"):
-                conn.run(f'nvram set sshd_authorized_keys="{pub_key}"', hide=True)
-                conn.run('nvram commit', hide=True)
-            home_dir = conn.run('echo $HOME', hide=True).stdout.strip() or '/tmp/root'
-            conn.run(f'mkdir -p {home_dir}/.ssh && echo "{pub_key}" >> {home_dir}/.ssh/authorized_keys && chmod 600 {home_dir}/.ssh/authorized_keys', hide=True)
-            if router_type == "openwrt" or router_type.startswith("openwrt"):
-                conn.run(f'mkdir -p /etc/dropbear && echo "{pub_key}" >> /etc/dropbear/authorized_keys && chmod 600 /etc/dropbear/authorized_keys', hide=True)
+            handler.install_authorized_key(conn, pub_key)
         except Exception as e:
             print(f"ERROR: failed to provision SSH key on router: {e}", file=output)
             raise

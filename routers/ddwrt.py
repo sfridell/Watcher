@@ -466,3 +466,12 @@ class DDWRTRouter(RouterBase):
         conn.run("nvram set openvpncl_enable=0", hide=True)
         conn.run("nvram commit", hide=True)
         self._stop_service(conn, "openvpn")
+
+    def install_authorized_key(self, conn, pub_key: str):
+        """Persist the key in NVRAM (``sshd_authorized_keys``) so it
+        survives reboot, then also append it to ``~/.ssh/authorized_keys``
+        via the shared helper.
+        """
+        conn.run(f'nvram set sshd_authorized_keys="{pub_key}"', hide=True)
+        conn.run('nvram commit', hide=True)
+        self._install_in_home_ssh(conn, pub_key)

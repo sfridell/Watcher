@@ -388,3 +388,7 @@ class MockRouter(RouterBase):
         self._state.setdefault("vpn", {})["connected"] = False
         self._state.setdefault("vpn", {})["interface"] = ""
         self._save_state()
+
+    def install_authorized_key(self, conn, pub_key: str):
+        """No-op: the mock router has no SSH daemon to provision keys for."""
+        pass
