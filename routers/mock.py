@@ -83,6 +83,10 @@ _DEFAULT_STATE = {
         "interface": "",
     },
     "vpn_config": {},
+    "dns": {
+        "upstream": ["192.168.1.1"],
+        "dhcp_option": ["192.168.1.1"],
+    },
 }
 
 _MOCK_STATE_DIR = "./mock_state"
@@ -144,6 +148,22 @@ class MockRouter(RouterBase):
         self._save_state()
 
     def restart_dhcp_service(self, conn):
+        self._save_state()
+
+    def get_dns(self, conn) -> Dict[str, Any]:
+        dns = self._state.get("dns", {})
+        return {
+            "upstream": list(dns.get("upstream", [])),
+            "dhcp_option": list(dns.get("dhcp_option", [])),
+        }
+
+    def set_dns(self, conn, dns_config: Dict[str, Any]):
+        upstream = list(dns_config.get("upstream", []) or [])
+        dhcp_option = list(dns_config.get("dhcp_option", []) or [])
+        self._state["dns"] = {
+            "upstream": upstream,
+            "dhcp_option": dhcp_option,
+        }
         self._save_state()
 
     def commit_config(self, conn):

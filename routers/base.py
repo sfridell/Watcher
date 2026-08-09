@@ -28,6 +28,30 @@ class RouterBase(ABC):
         pass
 
     @abstractmethod
+    def get_dns(self, conn) -> Dict[str, Any]:
+        """Return the router's dnsmasq DNS configuration as a dict:
+
+        {'upstream': [<ip>, ...], 'dhcp_option': [<ip>, ...]}
+
+        ``upstream`` are the resolvers the router itself uses
+        (dnsmasq ``server=``); ``dhcp_option`` are the DNS server
+        addresses handed to DHCP clients (DHCP option 6 /
+        dnsmasq ``dhcp-option=6,...``).
+        """
+        pass
+
+    @abstractmethod
+    def set_dns(self, conn, dns_config: Dict[str, Any]):
+        """Apply dnsmasq DNS configuration to the router.
+
+        ``dns_config`` mirrors the shape of :meth:`get_dns`.
+        Empty lists clear the corresponding setting. Does not commit
+        or restart services; callers handle that via
+        :meth:`commit_config` / :meth:`restart_dhcp_service`.
+        """
+        pass
+
+    @abstractmethod
     def commit_config(self, conn):
         pass
 

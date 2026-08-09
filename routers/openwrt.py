@@ -162,6 +162,49 @@ class OpenWrtRouter(RouterBase):
     def restart_dhcp_service(self, conn):
         self._restart_service(conn, "dnsmasq")
 
+    def _uci_set_list(self, conn, key, values):
+        """Replace a UCI list option ``key`` with ``values`` (a list of strings).
+
+        Deletes the option first, then ``uci add_list`` per value.
+        """
+        self._uci_delete(conn, key)
+        for v in values:
+            escaped = v.replace("'", "'\\''")
+            r = conn.run(f"uci add_list {key}='{escaped}'", hide=True, warn=True)
+            if r.exited != 0:
+                raise Exception(f'remote uci add_list {key} failed')
+
+    @staticmethod
+    def _parse_uci_list(value) -> List[str]:
+        """Split a whitespace-separated UCI list value into entries, stripping
+        surrounding single quotes."""
+        items = []
+        for part in (value or "").split():
+            items.append(part.strip("'"))
+        return items
+
+    def get_dns(self, conn) -> Dict[str, Any]:
+        # Upstream resolvers: dhcp.@dnsmasq[0].server (list option).
+        # DHCP option 6: parsed out of dhcp.@dnsmasq[0].dhcp_option (list).
+        raw_server = self._uci_get(conn, "dhcp.@dnsmasq[0].server")
+        upstream = self._parse_uci_list(raw_server)
+        dhcp_option = []
+        raw_opts = self._uci_get(conn, "dhcp.@dnsmasq[0].dhcp_option")
+        for entry in self._parse_uci_list(raw_opts):
+            if entry.startswith("6,"):
+                for ip in entry[2:].split(","):
+                    ip = ip.strip()
+                    if ip and ip not in dhcp_option:
+                        dhcp_option.append(ip)
+        return {"upstream": upstream, "dhcp_option": dhcp_option}
+
+    def set_dns(self, conn, dns_config: Dict[str, Any]):
+        upstream = list(dns_config.get("upstream", []) or [])
+        dhcp_option = list(dns_config.get("dhcp_option", []) or [])
+        self._uci_set_list(conn, "dhcp.@dnsmasq[0].server", upstream)
+        opt_values = [f"6,{','.join(dhcp_option)}"] if dhcp_option else []
+        self._uci_set_list(conn, "dhcp.@dnsmasq[0].dhcp_option", opt_values)
+
     # -- static leases --------------------------------------------------
 
     def get_static_leases(self, conn) -> List[List[str]]:

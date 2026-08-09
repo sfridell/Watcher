@@ -1716,8 +1716,27 @@ class DnsMonitorScreen(Screen):
         self.ids.toolbar.title = f'DNS Monitor - {conn_name}'
 
     def on_enter(self):
+        self._load_router_dns()
         if not self.ids.data_layout.children:
             self.ids.status_label.text = 'Select a query and tap Load'
+
+    def _load_router_dns(self):
+        """Fetch the router's own DNS config (upstream + DHCP option 6) and
+        show it on the status page. Best-effort: failures show a short notice
+        rather than blocking the DNS-log UI."""
+        label = self.ids.router_dns_label
+        try:
+            db = connectiondb.ConnectionDB()
+            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+            if conn is None or router is None:
+                label.text = 'Router DNS: connection unavailable'
+                return
+            dns = router.get_dns(conn)
+            upstream = ', '.join(dns.get('upstream', [])) or '(none)'
+            handed = ', '.join(dns.get('dhcp_option', [])) or '(none)'
+            label.text = f'Router DNS  |  upstream: {upstream}  |  DHCP option 6: {handed}'
+        except Exception as e:
+            label.text = f'Router DNS: unavailable ({e})'
 
     def _get_handler(self):
         entry = connectiondb.ConnectionDB().get_dns_log(self.connection_name)
@@ -1812,6 +1831,23 @@ class DnsSettingsScreen(Screen):
 
     def on_enter(self):
         self._load_current()
+        self._load_router_dns()
+
+    def _load_router_dns(self):
+        """Populate the router DNS fields from the live router so the settings
+        page reflects current state on entry."""
+        try:
+            db = connectiondb.ConnectionDB()
+            conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+            if conn is None or router is None:
+                self._set_router_dns_status('Router connection unavailable', ok=False)
+                return
+            dns = router.get_dns(conn)
+            self.ids.dns_upstream.text = ', '.join(dns.get('upstream', []))
+            self.ids.dns_dhcp_option.text = ', '.join(dns.get('dhcp_option', []))
+            self._set_router_dns_status('Loaded current DNS from router')
+        except Exception as e:
+            self._set_router_dns_status(f'Load failed: {e}', ok=False)
 
     def _load_current(self):
         try:
@@ -1950,6 +1986,62 @@ class DnsSettingsScreen(Screen):
 
     def go_back(self):
         self.manager.current = 'dns_monitor'
+
+    def _set_router_dns_status(self, message, ok=True):
+        label = self.ids.router_dns_status_label
+        label.text = message
+        label.theme_text_color = 'Custom'
+        label.text_color = (0.2, 0.7, 0.2, 1) if ok else (0.9, 0.3, 0.3, 1)
+
+    def _parse_csv(self, text):
+        return [part.strip() for part in text.split(',') if part.strip()]
+
+    def apply_router_dns(self):
+        upstream = self._parse_csv(self.ids.dns_upstream.text)
+        dhcp_option = self._parse_csv(self.ids.dns_dhcp_option.text)
+        if not upstream and not dhcp_option:
+            self._set_router_dns_status(
+                'No DNS configured — leave fields empty to skip, or enter values to apply.',
+                ok=False)
+            return
+
+        def confirm(instance):
+            dialog.dismiss()
+            try:
+                db = connectiondb.ConnectionDB()
+                conn, router = db.get_connection_with_handler(self.connection_name, io.StringIO())
+                if conn is None or router is None:
+                    self._set_router_dns_status('Failed to connect', ok=False)
+                    return
+                # Load the live config, set only the dns section, and apply a
+                # diff so unrelated VLAN/bridge/DHCP settings are untouched.
+                config = NetworkConfig.from_router(conn, router)
+                config.set_dns(upstream=upstream, dhcp_option=dhcp_option)
+                errors = config.validate()
+                if errors:
+                    self._set_router_dns_status('; '.join(errors), ok=False)
+                    return
+                d = NetworkConfig.from_router(conn, router).diff(config)
+                if not d.modified_dns:
+                    self._set_router_dns_status('DNS already matches router')
+                    return
+                config.apply_to_router(conn, router, mode='diff')
+                self._set_router_dns_status('DNS applied to router')
+            except Exception as e:
+                self._set_router_dns_status(f'Apply failed: {e}', ok=False)
+
+        apply_btn = MDRaisedButton(text='Apply DNS')
+        cancel_btn = MDFlatButton(text='Cancel')
+        apply_btn.bind(on_press=confirm)
+        cancel_btn.bind(on_press=lambda x: dialog.dismiss())
+        dialog = MDDialog(
+            title='Apply Router DNS',
+            text=f'Update router DNS on {self.connection_name}?\n'
+                 f'Upstream: {upstream or "(none)"}\n'
+                 f'DHCP option 6: {dhcp_option or "(none)"}',
+            buttons=[apply_btn, cancel_btn]
+        )
+        dialog.open()
 
     def show_error(self, message):
         ok_button = MDFlatButton(text='OK')

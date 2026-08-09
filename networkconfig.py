@@ -23,6 +23,7 @@ class ConfigDiff:
         self.removed_bridge_ip: List[str] = []
         self.added_restrictions: List[Dict[str, Any]] = []
         self.removed_restrictions: List[Dict[str, Any]] = []
+        self.modified_dns: List[Dict[str, Any]] = []
 
     def is_empty(self) -> bool:
         return (
@@ -40,6 +41,7 @@ class ConfigDiff:
             and not self.removed_bridge_ip
             and not self.added_restrictions
             and not self.removed_restrictions
+            and not self.modified_dns
         )
 
     def __str__(self):
@@ -86,6 +88,15 @@ class ConfigDiff:
                 desc = f" ({r['description']})" if r.get("description") else ""
                 bidi = " <-> " if r.get("bidirectional") else " -> "
                 lines.append(f"  Remove restriction: vlan{r['from']}{bidi}vlan{r['to']}{desc}")
+        if self.modified_dns:
+            for entry in self.modified_dns:
+                ch = entry["changes"]
+                up = ch.get("upstream", {})
+                opt = ch.get("dhcp_option", {})
+                if up:
+                    lines.append(f"  Modified DNS upstream: {up.get('from')} -> {up.get('to')}")
+                if opt:
+                    lines.append(f"  Modified DNS DHCP option 6: {opt.get('from')} -> {opt.get('to')}")
         return "\n".join(lines) if lines else "  (no changes)"
 
 
@@ -114,6 +125,7 @@ class NetworkConfig:
             "vlan_restrictions": [],
         }
         self.dhcp: Dict[str, Any] = {"static_leases": []}
+        self.dns: Dict[str, Any] = {"upstream": [], "dhcp_option": []}
 
     @classmethod
     def from_router(cls, conn, router) -> "NetworkConfig":
@@ -149,6 +161,7 @@ class NetworkConfig:
                 config.network["vlans"][vlan_name]["members"] = members
         config._resolve_bridged_vlans()
         config.dhcp["static_leases"] = router.get_static_leases(conn)
+        config.dns = router.get_dns(conn)
         raw_rules = router.get_firewall_rules(conn)
         restrictions = []
         seen = set()
@@ -174,6 +187,8 @@ class NetworkConfig:
             config.network.update(data["network"])
         if "dhcp" in data:
             config.dhcp.update(data["dhcp"])
+        if "dns" in data:
+            config.dns.update(data["dns"])
         config._normalize()
         return config
 
@@ -197,8 +212,22 @@ class NetworkConfig:
         self.network.setdefault("ports", {})
         self.network.setdefault("vlan_restrictions", [])
         self.dhcp.setdefault("static_leases", [])
+        self.dns.setdefault("upstream", [])
+        self.dns.setdefault("dhcp_option", [])
+        self._normalize_dns()
         for vlan_name in self.network["vlans"]:
             self.network["vlans"][vlan_name].setdefault("members", [])
+
+    def _normalize_dns(self):
+        """Ensure the ``dns`` section is well-formed: lists for
+        ``upstream`` and ``dhcp_option``, dropping anything else."""
+        dns = self.dns
+        if not isinstance(dns.get("upstream"), list):
+            dns["upstream"] = []
+        if not isinstance(dns.get("dhcp_option"), list):
+            dns["dhcp_option"] = []
+        for key in ("upstream", "dhcp_option"):
+            dns[key] = [str(v).strip() for v in dns[key] if str(v).strip()]
 
     def _resolve_bridged_vlans(self):
         """For bridged VLANs with 0.0.0.0 IP, resolve effective IP/netmask/DHCP from their bridge."""
@@ -227,6 +256,7 @@ class NetworkConfig:
         return {
             "network": copy.deepcopy(self.network),
             "dhcp": copy.deepcopy(self.dhcp),
+            "dns": copy.deepcopy(self.dns),
         }
 
     def to_json(self) -> str:
@@ -362,7 +392,28 @@ class NetworkConfig:
                             if not r2.get("bidirectional"):
                                 errors.append(f"Redundant: bidirectional restriction from {key[0]} to {key[1]} "
                                              f"overlaps with explicit reverse from {reverse_key[0]} to {reverse_key[1]}")
+        self._validate_dns(errors)
         return errors
+
+    def _validate_dns(self, errors: List[str]):
+        """Validate the ``dns`` section if present. An absent or fully-empty
+        ``dns`` section is treated as a no-op (no errors, no application)."""
+        if not self.is_dns_empty():
+            for ip in self.dns.get("upstream", []):
+                try:
+                    ipaddress.IPv4Address(ip)
+                except (ipaddress.AddressValueError, ValueError):
+                    errors.append(f"DNS upstream resolver '{ip}' is not a valid IPv4 address")
+            for ip in self.dns.get("dhcp_option", []):
+                try:
+                    ipaddress.IPv4Address(ip)
+                except (ipaddress.AddressValueError, ValueError):
+                    errors.append(f"DNS DHCP option 6 entry '{ip}' is not a valid IPv4 address")
+
+    def is_dns_empty(self) -> bool:
+        """True when the DNS section carries no configuration to apply."""
+        dns = self.dns
+        return not dns.get("upstream") and not dns.get("dhcp_option")
 
     def diff(self, other: "NetworkConfig") -> ConfigDiff:
         """Compute the differences between self (old/current) and other (new/desired).
@@ -451,7 +502,27 @@ class NetworkConfig:
         for key, r in my_restrictions.items():
             if key not in other_restrictions:
                 d.removed_restrictions.append(copy.deepcopy(r))
+        self._diff_dns(other, d)
         return d
+
+    def _diff_dns(self, other: "NetworkConfig", d: ConfigDiff):
+        """Detect changes in the ``dns`` section between self (current) and
+        other (desired). A fully-empty desired ``dns`` section is treated as a
+        no-op (no diff produced) so empty/legacy specs never clobber the
+        router's resolver. Records a single ``modified_dns`` entry listing the
+        changes otherwise."""
+        if other.is_dns_empty():
+            return
+        my_dns = self.dns if self.dns else {}
+        other_dns = other.dns if other.dns else {}
+        changes = {}
+        for key in ("upstream", "dhcp_option"):
+            my_val = list(my_dns.get(key, []))
+            other_val = list(other_dns.get(key, []))
+            if my_val != other_val:
+                changes[key] = {"from": my_val, "to": other_val}
+        if changes:
+            d.modified_dns.append({"changes": changes})
 
     def add_vlan(self, vlan_id: int, ip: str = "0.0.0.0",
                  netmask: str = "0.0.0.0", bridged: bool = False,
@@ -597,6 +668,19 @@ class NetworkConfig:
             "lease_time_min": lease,
         }
 
+    def set_dns(self, upstream: List[str] = None, dhcp_option: List[str] = None):
+        """Set the router DNS section. ``None`` (or omitted) preserves an
+        existing value, while an explicit empty list clears it."""
+        if upstream is not None:
+            self.dns["upstream"] = [str(ip).strip() for ip in upstream if str(ip).strip()]
+        if dhcp_option is not None:
+            self.dns["dhcp_option"] = [str(ip).strip() for ip in dhcp_option if str(ip).strip()]
+
+    def clear_dns(self):
+        """Remove all DNS configuration from the spec (no-op during apply)."""
+        self.dns["upstream"] = []
+        self.dns["dhcp_option"] = []
+
     def remove_bridge_dhcp(self, bridge: str):
         bridges = self.network.get("bridges", {})
         if bridge in bridges:
@@ -687,6 +771,10 @@ class NetworkConfig:
             router.set_vlan_members(conn, vlan_name, members)
         restrictions = self._expand_restrictions()
         router.set_firewall_rules(conn, restrictions)
+        # DNS is only applied when the spec carries a non-empty dns section,
+        # so legacy snapshots without a dns key remain a no-op.
+        if not self.is_dns_empty():
+            router.set_dns(conn, self.dns)
         router.commit_config(conn)
         router.restart_dhcp_service(conn)
 
@@ -795,6 +883,10 @@ class NetworkConfig:
         if d.added_restrictions or d.removed_restrictions:
             current_restrictions = self._expand_restrictions()
             router.set_firewall_rules(conn, current_restrictions)
+        # Apply DNS changes only when the desired spec actually has a DNS
+        # section diff; an empty/absent dns section leaves the router alone.
+        if d.modified_dns:
+            router.set_dns(conn, self.dns)
         router.commit_config(conn)
         router.restart_dhcp_service(conn)
 

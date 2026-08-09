@@ -117,6 +117,56 @@ class DDWRTRouter(RouterBase):
     def restart_dhcp_service(self, conn):
         self._restart_service(conn, "dnsmasq")
 
+    @staticmethod
+    def _parse_dnsmasq_options(text):
+        """Parse a ``dnsmasq_options``/``dnsmasq_custom`` blob into upstream
+        resolvers (``server=`` lines) and DHCP option 6 entries
+        (``dhcp-option=6,...`` lines). Returns ``(upstream, dhcp_option)``."""
+        upstream = []
+        dhcp_option = []
+        for line in (text or "").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            for token in line.split():
+                if token.startswith("server="):
+                    val = token[len("server="):]
+                    if val and val not in upstream:
+                        upstream.append(val)
+                elif token.startswith("dhcp-option=6,") or token == "dhcp-option=6,":
+                    val = token[len("dhcp-option=6,"):]
+                    for ip in val.split(","):
+                        ip = ip.strip()
+                        if ip and ip not in dhcp_option:
+                            dhcp_option.append(ip)
+        return upstream, dhcp_option
+
+    def get_dns(self, conn) -> Dict[str, Any]:
+        upstream = []
+        dhcp_option = []
+        for key in ("dnsmasq_options", "dnsmasq_custom"):
+            result = conn.run(f"nvram get {key}", hide=True, warn=True)
+            if result.exited == 0 and result.stdout.strip():
+                up, opt = self._parse_dnsmasq_options(result.stdout)
+                for ip in up:
+                    if ip not in upstream:
+                        upstream.append(ip)
+                for ip in opt:
+                    if ip not in dhcp_option:
+                        dhcp_option.append(ip)
+        return {"upstream": upstream, "dhcp_option": dhcp_option}
+
+    def set_dns(self, conn, dns_config: Dict[str, Any]):
+        upstream = list(dns_config.get("upstream", []) or [])
+        dhcp_option = list(dns_config.get("dhcp_option", []) or [])
+        tokens = [f"server={ip}" for ip in upstream]
+        if dhcp_option:
+            tokens.append("dhcp-option=6," + ",".join(dhcp_option))
+        blob = " ".join(tokens)
+        result = conn.run(f'nvram set dnsmasq_options="{blob}"', hide=True)
+        if result.exited != 0:
+            raise Exception('remote set dnsmasq_options failed')
+
     def commit_config(self, conn):
         result = conn.run('nvram commit', hide=True)
         if result.exited != 0:

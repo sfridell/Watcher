@@ -624,5 +624,135 @@ class TestNetworkConfigFromRouterRestrictions(unittest.TestCase):
         self.assertEqual(len(restrictions), 0)
 
 
+class TestMockRouterDns(unittest.TestCase):
+    def setUp(self):
+        self.router = MockRouter()
+        self.conn = None
+
+    def test_get_dns_default(self):
+        dns = self.router.get_dns(self.conn)
+        self.assertIn("upstream", dns)
+        self.assertIn("dhcp_option", dns)
+        self.assertGreater(len(dns["upstream"]), 0)
+        self.assertGreater(len(dns["dhcp_option"]), 0)
+
+    def test_set_dns_round_trip(self):
+        self.router.set_dns(self.conn, {"upstream": ["8.8.8.8", "1.1.1.1"],
+                                        "dhcp_option": ["192.168.1.1"]})
+        dns = self.router.get_dns(self.conn)
+        self.assertEqual(dns["upstream"], ["8.8.8.8", "1.1.1.1"])
+        self.assertEqual(dns["dhcp_option"], ["192.168.1.1"])
+
+    def test_set_dns_empty_clears(self):
+        self.router.set_dns(self.conn, {"upstream": [], "dhcp_option": []})
+        dns = self.router.get_dns(self.conn)
+        self.assertEqual(dns["upstream"], [])
+        self.assertEqual(dns["dhcp_option"], [])
+
+
+class TestNetworkConfigDns(unittest.TestCase):
+    def setUp(self):
+        self.router = MockRouter()
+        self.conn = None
+
+    def test_from_router_populates_dns(self):
+        config = NetworkConfig.from_router(self.conn, self.router)
+        self.assertIn("upstream", config.dns)
+        self.assertIn("dhcp_option", config.dns)
+        self.assertGreater(len(config.dns["upstream"]), 0)
+
+    def test_dns_round_trip_json(self):
+        config = NetworkConfig.from_router(self.conn, self.router)
+        config.set_dns(upstream=["9.9.9.9"], dhcp_option=["10.0.0.1"])
+        data = json.loads(config.to_json())
+        self.assertIn("dns", data)
+        config2 = NetworkConfig.from_dict(data)
+        self.assertEqual(config2.dns["upstream"], ["9.9.9.9"])
+        self.assertEqual(config2.dns["dhcp_option"], ["10.0.0.1"])
+
+    def test_is_dns_empty(self):
+        config = NetworkConfig()
+        self.assertTrue(config.is_dns_empty())
+        config.set_dns(upstream=["8.8.8.8"])
+        self.assertFalse(config.is_dns_empty())
+        config.clear_dns()
+        self.assertTrue(config.is_dns_empty())
+
+    def test_diff_detects_dns_change(self):
+        current = NetworkConfig.from_router(self.conn, self.router)
+        desired = NetworkConfig.from_router(self.conn, self.router)
+        desired.set_dns(upstream=["8.8.4.4"])
+        d = current.diff(desired)
+        self.assertFalse(d.is_empty())
+        self.assertEqual(len(d.modified_dns), 1)
+        ch = d.modified_dns[0]["changes"]
+        self.assertEqual(ch["upstream"]["to"], ["8.8.4.4"])
+
+    def test_diff_empty_dns_noop(self):
+        current = NetworkConfig.from_router(self.conn, self.router)
+        desired = NetworkConfig.from_router(self.conn, self.router)
+        d = current.diff(desired)
+        self.assertTrue(d.is_empty())
+
+    def test_validate_dns_ok(self):
+        config = NetworkConfig()
+        config.set_dns(upstream=["8.8.8.8"], dhcp_option=["192.168.1.1"])
+        self.assertEqual(config.validate(), [])
+
+    def test_validate_dns_bad_ip(self):
+        config = NetworkConfig()
+        config.set_dns(upstream=["not-an-ip"])
+        errors = config.validate()
+        self.assertTrue(any("not-an-ip" in e for e in errors))
+
+    def test_apply_full_with_dns(self):
+        config = NetworkConfig()
+        config.set_dns(upstream=["1.1.1.1"], dhcp_option=["192.168.1.1"])
+        config.apply_to_router(self.conn, self.router, mode="full")
+        dns = self.router.get_dns(self.conn)
+        self.assertEqual(dns["upstream"], ["1.1.1.1"])
+        self.assertEqual(dns["dhcp_option"], ["192.168.1.1"])
+
+    def test_apply_full_without_dns_is_noop(self):
+        existing = self.router.get_dns(self.conn)
+        config = NetworkConfig()
+        self.assertTrue(config.is_dns_empty())
+        config.apply_to_router(self.conn, self.router, mode="full")
+        # Router DNS should be unchanged when the spec carries no DNS section.
+        self.assertEqual(self.router.get_dns(self.conn), existing)
+
+    def test_apply_diff_dns_only(self):
+        current = NetworkConfig.from_router(self.conn, self.router)
+        desired = NetworkConfig.from_router(self.conn, self.router)
+        desired.set_dns(upstream=["8.8.4.4"], dhcp_option=["192.168.1.1"])
+        desired.apply_to_router(self.conn, self.router, mode="diff")
+        dns = self.router.get_dns(self.conn)
+        self.assertEqual(dns["upstream"], ["8.8.4.4"])
+
+    def test_apply_diff_empty_dns_leaves_router(self):
+        self.router.set_dns(self.conn, {"upstream": ["8.8.8.8"], "dhcp_option": ["192.168.1.1"]})
+        existing = self.router.get_dns(self.conn)
+        # Desired config has empty dns and no other changes -> router untouched.
+        desired = NetworkConfig.from_router(self.conn, self.router)
+        desired.clear_dns()
+        desired.apply_to_router(self.conn, self.router, mode="diff")
+        self.assertEqual(self.router.get_dns(self.conn), existing)
+
+    def test_state_persistence_includes_dns(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import routers.mock as mock_module
+            original_dir = mock_module._MOCK_STATE_DIR
+            mock_module._MOCK_STATE_DIR = os.path.join(tmpdir, "mock_state")
+            try:
+                router = MockRouter(name="test_dns_persist")
+                router.set_dns(self.conn, {"upstream": ["8.8.8.8"], "dhcp_option": ["192.168.1.1"]})
+                del router
+                router2 = MockRouter(name="test_dns_persist")
+                dns = router2.get_dns(self.conn)
+                self.assertEqual(dns["upstream"], ["8.8.8.8"])
+            finally:
+                mock_module._MOCK_STATE_DIR = original_dir
+
+
 if __name__ == '__main__':
     unittest.main()
