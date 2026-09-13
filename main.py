@@ -1710,6 +1710,7 @@ class VpnConfigEditScreen(Screen):
 
 class DnsMonitorScreen(Screen):
     connection_name = StringProperty('')
+    _last_result = None
 
     def set_connection(self, conn_name):
         self.connection_name = conn_name
@@ -1717,8 +1718,15 @@ class DnsMonitorScreen(Screen):
 
     def on_enter(self):
         self._load_router_dns()
-        if not self.ids.data_layout.children:
-            self.ids.status_label.text = 'Select a query and tap Load'
+        self.load_data()
+
+    def on_query_change(self):
+        if self.connection_name:
+            self.load_data()
+
+    def on_limit_change(self):
+        if self.connection_name and self._last_result is not None:
+            self._render_data()
 
     def _load_router_dns(self):
         """Fetch the router's own DNS config (upstream + DHCP option 6) and
@@ -1764,7 +1772,6 @@ class DnsMonitorScreen(Screen):
         query = self.ids.query_spinner.text
         period = self.ids.period_spinner.text
         client_ip = self.ids.client_field.text.strip() or None
-        limit = int(self.ids.limit_field.text or '20')
         try:
             if client_ip and query == 'Lookups':
                 data = handler.get_dns_lookups_for_client(conn, period, client_ip)
@@ -1792,6 +1799,16 @@ class DnsMonitorScreen(Screen):
         except Exception as e:
             self.show_error(f'Query failed: {e}')
             return
+        self._last_result = (data, headers, key)
+        self._render_data()
+
+    def _render_data(self):
+        """Re-render the last successful query from cache, applying the
+        current limit. No network round trip."""
+        data, headers, key = self._last_result
+        query = self.ids.query_spinner.text
+        period = self.ids.period_spinner.text
+        limit = int(self.ids.limit_field.text or '20')
         self.ids.data_layout.clear_widgets()
         if not data:
             self.ids.status_label.text = f'No {query} in the last {period}'

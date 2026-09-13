@@ -1146,10 +1146,11 @@
 
                 Spinner:
                     id: query_spinner
-                    text: 'Lookups'
+                    text: 'Blocked Domains'
                     values: ['Lookups', 'Blocks', 'Blocked Domains']
                     size_hint_x: 0.30
                     font_size: '14sp'
+                    on_text: root.on_query_change()
 
                 Spinner:
                     id: period_spinner
@@ -1157,12 +1158,14 @@
                     values: ['1h', '24h', '7d']
                     size_hint_x: 0.20
                     font_size: '14sp'
+                    on_text: root.on_query_change()
 
                 MDTextField:
                     id: client_field
                     hint_text: 'Client IP (optional)'
                     size_hint_x: 0.35
                     font_size: '14sp'
+                    on_text_validate: root.load_data()
 
                 MDTextField:
                     id: limit_field
@@ -1171,6 +1174,7 @@
                     size_hint_x: 0.15
                     input_filter: 'int'
                     font_size: '14sp'
+                    on_text: root.on_limit_change()
 
             MDTextField:
                 id: pin_field
@@ -1179,19 +1183,7 @@
                 size_hint_y: None
                 height: dp(40)
                 font_size: '14sp'
-
-            MDBoxLayout:
-                size_hint_y: None
-                height: dp(48)
-                spacing: dp(10)
-
-                MDRaisedButton:
-                    text: 'Load'
-                    on_press: root.load_data()
-
-                MDFlatButton:
-                    text: 'Back'
-                    on_press: root.go_back()
+                on_text_validate: root.load_data()
 
             MDLabel:
                 id: status_label
