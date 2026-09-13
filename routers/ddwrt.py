@@ -39,7 +39,8 @@ class DDWRTRouter(RouterBase):
         elif self._service_restart_cmd == "ddwrt":
             result = conn.run(f"stopservice {service_name} && startservice {service_name}", hide=True, warn=True)
         else:
-            result = conn.run(f"killall {service_name} 2>/dev/null; sleep 1; /usr/sbin/{service_name}", hide=True, warn=True)
+            result = conn.run(f"killall {service_name} 2>/dev/null; sleep 1; /usr/sbin/{service_name}",
+                              hide=True, warn=True)
         if result.exited != 0:
             raise Exception(f'remote {service_name} restart command failed')
 

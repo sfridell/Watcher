@@ -62,6 +62,12 @@ RUN \
   python3 -m pip install --upgrade python-lsp-server
 
 RUN \
+  python3 -m pip install --upgrade ruff
+
+RUN \
+  python3 -m pip install --upgrade pytest
+
+RUN \
   python3 -m pip install --upgrade tabulate
 
 RUN \

@@ -1,0 +1,8 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+# Baseline lint set (pycodestyle errors/warnings + pyflakes). Style rules that
+# conflict with project conventions (e.g. TRY002: AGENTS.md mandates raising
+# bare Exception) are intentionally left out.
+select = ["E", "F", "W"]

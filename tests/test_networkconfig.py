@@ -722,7 +722,6 @@ class TestNetworkConfigDns(unittest.TestCase):
         self.assertEqual(self.router.get_dns(self.conn), existing)
 
     def test_apply_diff_dns_only(self):
-        current = NetworkConfig.from_router(self.conn, self.router)
         desired = NetworkConfig.from_router(self.conn, self.router)
         desired.set_dns(upstream=["8.8.4.4"], dhcp_option=["192.168.1.1"])
         desired.apply_to_router(self.conn, self.router, mode="diff")

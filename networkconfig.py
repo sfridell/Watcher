@@ -67,7 +67,8 @@ class ConfigDiff:
                 lines.append(f"  Removed from bridge {bridge}: {members}")
         if self.added_bridge_dhcp:
             for d in self.added_bridge_dhcp:
-                lines.append(f"  Added DHCP on {d['bridge']}: start={d['range_start']}, size={d['range_size']}, lease={d['lease_time_min']}")
+                lines.append(f"  Added DHCP on {d['bridge']}: start={d['range_start']}, "
+                             f"size={d['range_size']}, lease={d['lease_time_min']}")
         if self.removed_bridge_dhcp:
             lines.append(f"  Removed DHCP on: {self.removed_bridge_dhcp}")
         if self.modified_bridge_dhcp:
@@ -297,7 +298,8 @@ class NetworkConfig:
                 if net is not None:
                     for other_name, other_net in subnets:
                         if net.overlaps(other_net):
-                            errors.append(f"VLAN {vlan_name} subnet {net} overlaps with {other_name} subnet {other_net}")
+                            errors.append(f"VLAN {vlan_name} subnet {net} overlaps with "
+                                          f"{other_name} subnet {other_net}")
                     subnets.append((vlan_name, net))
         for bridge_name, bridge_data in self.network.get("bridges", {}).items():
             ip = bridge_data.get("ip")
@@ -307,7 +309,8 @@ class NetworkConfig:
                 if net is not None:
                     for other_name, other_net in subnets:
                         if net.overlaps(other_net):
-                            errors.append(f"Bridge {bridge_name} subnet {net} overlaps with {other_name} subnet {other_net}")
+                            errors.append(f"Bridge {bridge_name} subnet {net} overlaps with "
+                                          f"{other_name} subnet {other_net}")
                     subnets.append((bridge_name, net))
             dhcp = bridge_data.get("dhcp")
             if dhcp and dhcp.get("enabled"):
@@ -320,7 +323,8 @@ class NetworkConfig:
                         if start < 1 or start >= num_hosts:
                             errors.append(f"Bridge {bridge_name}: DHCP range_start {start} out of subnet range")
                         if start + size > num_hosts:
-                            errors.append(f"Bridge {bridge_name}: DHCP range_start({start}) + range_size({size}) exceeds subnet")
+                            errors.append(f"Bridge {bridge_name}: DHCP range_start({start}) + "
+                                          f"range_size({size}) exceeds subnet")
         port_untagged = {}
         for port, vlans in self.network.get("ports", {}).items():
             if len(vlans) > 1:
@@ -391,7 +395,8 @@ class NetworkConfig:
                         if (r2.get("from"), r2.get("to")) == reverse_key:
                             if not r2.get("bidirectional"):
                                 errors.append(f"Redundant: bidirectional restriction from {key[0]} to {key[1]} "
-                                             f"overlaps with explicit reverse from {reverse_key[0]} to {reverse_key[1]}")
+                                               f"overlaps with explicit reverse from {reverse_key[0]} "
+                                               f"to {reverse_key[1]}")
         self._validate_dns(errors)
         return errors
 
@@ -577,7 +582,8 @@ class NetworkConfig:
                 members.remove(vlan_name)
 
     def update_vlan(self, vlan_id: int, **kwargs):
-        """Update properties of an existing VLAN. Accepts ip, netmask, bridged, nat, dhcp_enabled, dhcp_start/size/lease."""
+        """Update properties of an existing VLAN. Accepts ip, netmask, bridged,
+        nat, dhcp_enabled, dhcp_start/size/lease."""
         vlan_name = f"vlan{vlan_id}"
         if vlan_name not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} does not exist")
@@ -597,7 +603,8 @@ class NetworkConfig:
                 vlan_data.pop("dhcp", None)
 
     def assign_port(self, port: str, vlan_id: int):
-        """Add a port to a VLAN's member list and update the port-to-VLAN mapping. Raises ValueError if VLAN doesn't exist."""
+        """Add a port to a VLAN's member list and update the port-to-VLAN mapping.
+        Raises ValueError if VLAN doesn't exist."""
         if f"vlan{vlan_id}" not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_id} does not exist")
         ports = self.network.setdefault("ports", {})
@@ -623,7 +630,8 @@ class NetworkConfig:
                 members.remove(port)
 
     def add_bridge_vlan(self, bridge: str, vlan_name: str):
-        """Add a VLAN interface as a member of a bridge. Creates the bridge if it doesn't exist. Raises ValueError if VLAN doesn't exist."""
+        """Add a VLAN interface as a member of a bridge. Creates the bridge if it
+        doesn't exist. Raises ValueError if VLAN doesn't exist."""
         if vlan_name not in self.network.get("vlans", {}):
             raise ValueError(f"VLAN {vlan_name} does not exist")
         bridges = self.network.setdefault("bridges", {})
@@ -719,7 +727,8 @@ class NetworkConfig:
         self.network["vlan_restrictions"] = [r for r in restrictions if self._restriction_key(r) != target]
         if bidirectional:
             reverse = (to_id, from_id)
-            self.network["vlan_restrictions"] = [r for r in self.network["vlan_restrictions"] if self._restriction_key(r) != reverse]
+            self.network["vlan_restrictions"] = [r for r in self.network["vlan_restrictions"]
+                                                 if self._restriction_key(r) != reverse]
 
     def apply_to_router(self, conn, router, mode="diff"):
         """Push this config to a router. In 'diff' mode, only changed settings are applied.
@@ -872,10 +881,14 @@ class NetworkConfig:
                 current = NetworkConfig.from_router(conn, router)
                 if bridge in current.network.get("bridges", {}):
                     existing = current.network["bridges"][bridge].get("dhcp", {})
-                    router.set_bridge_dhcp(conn, bridge,
-                                           changes.get("range_start", {}).get("to", existing.get("range_start", 0)) if "range_start" in changes else existing.get("range_start", 0),
-                                           changes.get("range_size", {}).get("to", existing.get("range_size", 0)) if "range_size" in changes else existing.get("range_size", 0),
-                                           changes.get("lease_time_min", {}).get("to", existing.get("lease_time_min", 0)) if "lease_time_min" in changes else existing.get("lease_time_min", 0))
+                    router.set_bridge_dhcp(
+                        conn, bridge,
+                        changes.get("range_start", {}).get("to", existing.get("range_start", 0))
+                        if "range_start" in changes else existing.get("range_start", 0),
+                        changes.get("range_size", {}).get("to", existing.get("range_size", 0))
+                        if "range_size" in changes else existing.get("range_size", 0),
+                        changes.get("lease_time_min", {}).get("to", existing.get("lease_time_min", 0))
+                        if "lease_time_min" in changes else existing.get("lease_time_min", 0))
         for ip_info in d.added_bridge_ip:
             router.set_bridge_ip(conn, ip_info["bridge"], ip_info["ip"], ip_info["netmask"])
         for bridge_name in d.removed_bridge_ip:

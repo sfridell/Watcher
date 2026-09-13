@@ -11,10 +11,6 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDRaisedButton, MDFlatButton, MDIconButton
 from kivymd.uix.tooltip import MDTooltip
-
-
-class TooltipMDIconButton(MDIconButton, MDTooltip):
-    pass
 from kivymd.uix.label import MDLabel
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.selectioncontrol import MDCheckbox
@@ -34,6 +30,11 @@ import watcher
 import connectiondb
 from networkconfig import NetworkConfig
 from vpnconfig import parse_ovpn_file, get_ddwrt_nvram_from_config, config_summary
+
+
+class TooltipMDIconButton(MDIconButton, MDTooltip):
+    pass
+
 
 logging.getLogger('paramiko').setLevel(logging.WARNING)
 logging.getLogger('invoke').setLevel(logging.WARNING)
@@ -466,7 +467,8 @@ class ConfigScreen(Screen):
 
     def load_data(self):
         try:
-            output = watcher.process_command(['connections', 'config', '--action', 'show', '--connection', self.connection_name])
+            output = watcher.process_command(
+                ['connections', 'config', '--action', 'show', '--connection', self.connection_name])
             data = output.getvalue()
             self.ids.config_text.text = data
         except Exception as e:
