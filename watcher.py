@@ -645,7 +645,7 @@ def get_args(argv=sys.argv[1:]):
     dnslog_set_cmd = dnslog_commands.add_parser('set')
     dnslog_set_cmd.add_argument("--connection", type=str, required=True)
     dnslog_set_cmd.add_argument("--type", type=str, required=True,
-                                choices=['pihole', 'pihole_v5', 'mock'])
+                                choices=['pihole', 'mock'])
     dnslog_set_cmd.add_argument("--ip", type=str, default=None,
                                 help="DNS-log endpoint IP (optional ':port')")
     dnslog_set_cmd.add_argument("--scheme", type=str, default=None,

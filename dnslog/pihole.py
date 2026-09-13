@@ -135,9 +135,21 @@ class PiHoleDnsLog(DnsLogBase):
 
     # -- query aggregation -------------------------------------------
     def _iter_queries(self, conn, period: str):
+        """Yield every query in the period, paginating over /api/queries.
+
+        Pi-hole v6 cursor semantics: the request parameter ``cursor`` is an
+        inclusive upper bound on the query id (``q.id <= cursor``), while the
+        response ``cursor`` is only a snapshot marker (the largest database
+        id when the request was served) and gets echoed back if one was sent.
+        Passing the response cursor back as a request cursor therefore
+        re-fetches the same page forever. To advance, request the next page
+        with ``cursor`` set to the oldest id of the current batch; the
+        boundary row is re-sent (inclusive match) and must be skipped.
+        """
         now = time.time()
         from_ts = now - period_seconds(period)
         cursor = None
+        boundary = None  # ids >= boundary have already been yielded
         while True:
             params = {
                 "from": int(from_ts),
@@ -149,12 +161,25 @@ class PiHoleDnsLog(DnsLogBase):
                 params["cursor"] = cursor
             data = self._get(conn, "/queries", params)
             queries = data.get("queries", []) or []
+            oldest = None
             for q in queries:
+                qid = q.get("id")
+                if qid is None:
+                    yield q
+                    continue
+                if oldest is None or qid < oldest:
+                    oldest = qid
+                if boundary is not None and qid >= boundary:
+                    continue  # re-sent boundary row from the inclusive match
                 yield q
-            cursor = data.get("cursor")
-            fetched = len(queries)
-            if not cursor or fetched < PAGE_SIZE:
+            if len(queries) < PAGE_SIZE:
                 break
+            if oldest is None:
+                break  # rows carry no ids - pagination cannot advance
+            if cursor is not None and oldest >= cursor:
+                break  # page made no forward progress - avoid an infinite loop
+            cursor = oldest
+            boundary = oldest
 
     @staticmethod
     def _aggregate(queries, blocked: bool) -> List[Dict[str, Any]]:

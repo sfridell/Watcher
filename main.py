@@ -1874,7 +1874,7 @@ class DnsSettingsScreen(Screen):
             entry = db.get_dns_log(self.connection_name)
             if not entry:
                 self.ids.current_label.text = 'No DNS-log endpoint configured'
-                self.ids.dns_type.text = 'pihole_v5'
+                self.ids.dns_type.text = 'pihole'
                 self.ids.dns_ip.text = ''
                 self.ids.dns_apikey.text = ''
                 self.ids.dns_pin.text = ''

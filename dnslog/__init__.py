@@ -3,11 +3,9 @@ from typing import Dict, Optional, Type
 from .base import DnsLogBase
 from .mock import MockDnsLog
 from .pihole import PiHoleDnsLog
-from .pihole_v5 import PiHoleV5DnsLog
 
 DNS_LOG_HANDLERS: Dict[str, Type[DnsLogBase]] = {
     "pihole": PiHoleDnsLog,
-    "pihole_v5": PiHoleV5DnsLog,
     "mock": MockDnsLog,
 }
 

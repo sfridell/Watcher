@@ -323,7 +323,12 @@ class ConnectionDB:
             print(f'ERROR: no DNS-log endpoint configured for {conn_name}', file=output)
             return None, None
         dns_type = entry.get('type', '')
-        handler = get_dns_handler(dns_type, name=conn_name)
+        try:
+            handler = get_dns_handler(dns_type, name=conn_name)
+        except ValueError as e:
+            print(f'ERROR: {e} for {conn_name}. Reconfigure the DNS-log endpoint '
+                  f'(supported types: pihole, mock)', file=output)
+            return None, None
         if dns_type == 'mock':
             return _MockDnsConnection(), handler
         # resolve apikey (encrypted -> PIN required; plaintext -> use directly)

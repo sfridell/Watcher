@@ -2,7 +2,6 @@ import json
 import os
 import shutil
 import tempfile
-import time
 import unittest
 from unittest import mock
 
@@ -11,7 +10,6 @@ import watcher
 from crypto_helpers import encrypt_secret, decrypt_secret
 from dnslog.mock import MockDnsLog, period_seconds
 from dnslog.pihole import PiHoleDnsLog, BLOCKED_STATUSES
-from dnslog.pihole_v5 import PiHoleV5DnsLog, BLOCKED_STATUSES as V5_BLOCKED, PERMITTED_STATUSES as V5_PERMITTED
 
 
 def _table_rows(output):
@@ -160,7 +158,7 @@ class TestConnectionDBDnsLog(unittest.TestCase):
     def test_plaintext_storage_no_pin(self):
         """Without a PIN the apikey is stored in plaintext (revocable-token mode)."""
         db = connectiondb.ConnectionDB()
-        db.set_dns_log('test_router', dns_type='pihole_v5', ip='1.2.3.4',
+        db.set_dns_log('test_router', dns_type='pihole', ip='1.2.3.4',
                        apikey='tok-plain', pin=None)
         with open('connections.json') as f:
             on_disk = f.read()
@@ -174,7 +172,7 @@ class TestConnectionDBDnsLog(unittest.TestCase):
     def test_encrypted_storage_with_pin(self):
         """With a PIN the apikey is encrypted; plaintext is not on disk."""
         db = connectiondb.ConnectionDB()
-        db.set_dns_log('test_router', dns_type='pihole_v5', ip='1.2.3.4',
+        db.set_dns_log('test_router', dns_type='pihole', ip='1.2.3.4',
                        apikey='tok-secret', pin='1234')
         with open('connections.json') as f:
             on_disk = f.read()
@@ -184,7 +182,7 @@ class TestConnectionDBDnsLog(unittest.TestCase):
 
     def test_show_does_not_leak_plaintext_key(self):
         db = connectiondb.ConnectionDB()
-        db.set_dns_log('test_router', dns_type='pihole_v5', ip='1.2.3.4',
+        db.set_dns_log('test_router', dns_type='pihole', ip='1.2.3.4',
                        apikey='leak-me-please', pin=None)
         out = watcher.process_command(['dns-log', 'show', '--connection', 'test_router'])
         self.assertNotIn('leak-me-please', out.getvalue())
@@ -306,18 +304,54 @@ class TestPiHoleHandlerHttp(unittest.TestCase):
         return post, get, dele
 
     def test_get_dns_lookups_auth_and_paginate(self):
-        queries_page1 = [{'client': {'ip': '10.0.0.1'}, 'status': 'FORWARDED'}] * 1000
-        queries_page2 = [{'client': {'ip': '10.0.0.2'}, 'status': 'FORWARDED'}] * 5
+        # v6 semantics: request cursor = inclusive upper id bound; response
+        # cursor = snapshot marker. Page 2 is requested with cursor=1001
+        # (oldest id of page 1) and re-sends the boundary row (id 1001).
+        queries_page1 = [{'id': 1000 + i, 'client': {'ip': '10.0.0.1'}, 'status': 'FORWARDED'}
+                         for i in range(1, 1001)]
+        queries_page2 = [{'id': 1001 - i, 'client': {'ip': '10.0.0.2'}, 'status': 'FORWARDED'}
+                         for i in range(0, 6)]
         post_resp = _FakeResp(200, _auth_payload())
-        get_resp1 = _FakeResp(200, {'queries': queries_page1, 'cursor': 999})
-        get_resp2 = _FakeResp(200, {'queries': queries_page2, 'cursor': None})
+        get_resp1 = _FakeResp(200, {'queries': queries_page1, 'cursor': 2000})
+        get_resp2 = _FakeResp(200, {'queries': queries_page2, 'cursor': 1001})
+        captured = []
+
+        def fake_get(url, params=None, **kwargs):
+            captured.append(params)
+            return [get_resp1, get_resp2][len(captured) - 1]
+
         post = mock.patch('dnslog.pihole.requests.post', return_value=post_resp)
-        get = mock.patch('dnslog.pihole.requests.get', side_effect=[get_resp1, get_resp2])
+        get = mock.patch('dnslog.pihole.requests.get', side_effect=fake_get)
         dele = mock.patch('dnslog.pihole.requests.delete', return_value=_FakeResp(204))
         with post, get, dele:
             result = self.h.get_dns_lookups(self.conn, '24h')
         by_ip = {d['ip']: d['count'] for d in result}
         self.assertEqual(by_ip, {'10.0.0.1': 1000, '10.0.0.2': 5})
+        # second page must continue below the first page's oldest id
+        self.assertEqual(captured[0].get('cursor'), None)
+        self.assertEqual(captured[1].get('cursor'), 1001)
+
+    def test_pagination_terminates_on_repeated_page(self):
+        # Regression: a server that keeps returning the same full page and
+        # echoes the same cursor (as the old code caused by feeding the
+        # response cursor back) must not produce an infinite loop.
+        queries_page = [{'id': 1000 + i, 'client': {'ip': '10.0.0.1'}, 'status': 'FORWARDED'}
+                        for i in range(1, 1001)]
+        get_resp = _FakeResp(200, {'queries': queries_page, 'cursor': 2000})
+        calls = []
+
+        def fake_get(url, params=None, **kwargs):
+            calls.append(params)
+            return get_resp
+
+        post = mock.patch('dnslog.pihole.requests.post', return_value=_FakeResp(200, _auth_payload()))
+        get = mock.patch('dnslog.pihole.requests.get', side_effect=fake_get)
+        dele = mock.patch('dnslog.pihole.requests.delete', return_value=_FakeResp(204))
+        with post, get, dele:
+            result = self.h.get_dns_lookups(self.conn, '24h')
+        self.assertEqual(result, [{'ip': '10.0.0.1', 'count': 1000}])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1].get('cursor'), 1001)
 
     def test_401_triggers_relogin(self):
         queries = [{'client': {'ip': '10.0.0.1'}, 'status': 'FORWARDED'}]
@@ -353,193 +387,6 @@ class io_dummy:
         return self._b.getvalue()
 
 
-class TestPiHoleV5Aggregation(unittest.TestCase):
-    """Unit-test PiHoleV5DnsLog aggregation primitives."""
-
-    def _make_rows(self):
-        # [ts, type, domain, client, status, dnssec, ...]
-        ts0 = int(time.time()) - 100
-        return [
-            [str(ts0), "A", "forward.com", "MPhone", "2", "0"],   # forwarded
-            [str(ts0), "A", "cdn.com",     "MPhone", "3", "0"],   # cached
-            [str(ts0), "A", "ads.evil",     "MPhone", "1", "0"],  # gravity-blocked
-            [str(ts0), "A", "ads.evil",     "rokuPP", "1", "0"],  # gravity-blocked
-            [str(ts0), "A", "regex.evil",   "rokuPP", "4", "0"],  # regex-blocked
-            [str(ts0), "A", "black.evil",   "rokuPP", "5", "0"],  # blacklist-blocked
-            [str(ts0), "A", "ok.com",       "MLaptop", "2", "0"],
-        ]
-
-    def test_status_classification(self):
-        for c in ("1", "4", "5", "6", "7", "8", "9", "10", "11"):
-            self.assertIn(c, V5_BLOCKED)
-        for c in ("2", "3"):
-            self.assertIn(c, V5_PERMITTED)
-        self.assertNotIn("2", V5_BLOCKED)
-        self.assertNotIn("1", V5_PERMITTED)
-
-    def test_aggregate_lookups(self):
-        h = PiHoleV5DnsLog()
-        counts = h._aggregate(self._make_rows(), blocked=False, from_ts=0, until_ts=int(time.time()) + 100)
-        self.assertEqual(counts, {"MPhone": 2, "MLaptop": 1})
-
-    def test_aggregate_blocks(self):
-        h = PiHoleV5DnsLog()
-        counts = h._aggregate(self._make_rows(), blocked=True, from_ts=0, until_ts=int(time.time()) + 100)
-        self.assertEqual(counts, {"MPhone": 1, "rokuPP": 3})
-
-    def test_aggregate_time_filter_excludes_old(self):
-        h = PiHoleV5DnsLog()
-        rows = [
-            ["0", "A", "old.com", "MPhone", "2", "0"],       # ts=0, way before window
-            [str(int(time.time()) - 10), "A", "new.com", "MPhone", "2", "0"],
-        ]
-        counts = h._aggregate(rows, blocked=False, from_ts=int(time.time()) - 60, until_ts=int(time.time()) + 10)
-        self.assertEqual(counts, {"MPhone": 1})
-
-    def test_name_to_ip_map(self):
-        top_sources = {
-            "MPhone|192.168.11.55": 100,
-            "rokuPP|192.168.11.59": 50,
-            "nerlens|172.18.0.1": 5,
-            "nerlens|192.168.12.50": 5,   # same name, two IPs - first wins
-            "10.0.0.9": 3,                 # bare IP (no hostname)
-        }
-        name_to_ip, ip_only = PiHoleV5DnsLog._build_name_to_ip_map(top_sources)
-        self.assertEqual(name_to_ip["MPhone"], "192.168.11.55")
-        self.assertEqual(name_to_ip["rokuPP"], "192.168.11.59")
-        self.assertEqual(name_to_ip["nerlens"], "172.18.0.1")  # first one wins
-        self.assertIn("10.0.0.9", ip_only)
-
-    def test_resolve_ip_priorities(self):
-        name_to_ip = {"MPhone": "192.168.11.55"}
-        ip_only = {"10.0.0.9"}
-        self.assertEqual(PiHoleV5DnsLog._resolve_ip("MPhone", name_to_ip, ip_only), "192.168.11.55")
-        self.assertEqual(PiHoleV5DnsLog._resolve_ip("10.0.0.9", name_to_ip, ip_only), "10.0.0.9")
-        # Unknown host: fallback to raw key
-        self.assertEqual(PiHoleV5DnsLog._resolve_ip("unknown-x", name_to_ip, ip_only), "unknown-x")
-
-
-class _FakeSession:
-    """Minimal requests.Session stand-in capturing post/get for v5 adapter."""
-
-    def __init__(self):
-        self.verify = True
-        self.post_calls = []
-        self.get_calls = []
-        post_responses = iter([])
-        get_responses = iter([])
-        self._post_iter = post_responses
-        self._get_iter = get_responses
-
-    def set_post(self, responses):
-        self._post_iter = iter(responses)
-
-    def set_get(self, responses):
-        self._get_iter = iter(responses)
-
-    def post(self, url, data=None, timeout=None, **kw):
-        self.post_calls.append((url, data))
-        return next(self._post_iter)
-
-    def get(self, url, params=None, timeout=None, **kw):
-        self.get_calls.append((url, params))
-        return next(self._get_iter)
-
-
-class TestPiHoleV5Http(unittest.TestCase):
-    def setUp(self):
-        self.h = PiHoleV5DnsLog()
-        self.conn = {"type": "pihole_v5", "ip": "192.168.12.50:8080", "apikey": "pw"}
-        self.sess = _FakeSession()
-        # inject the fake session
-        self.h._session = self.sess
-        self.h._base_url = "http://192.168.12.50:8080"
-
-    def _ok(self, payload):
-        return _FakeResp(200, payload)
-
-    def _unauth(self):
-        return _FakeResp(200, [])
-
-    def test_token_auth_no_login_needed(self):
-        """API token mode: first GET returns a dict → no POST login."""
-        rows = [[str(int(time.time()) - 30), "A", "ok.com", "MPhone", "2", "0"]]
-        self.sess.set_post([])  # no login should happen
-        self.sess.set_get([
-            self._ok({"data": rows}),                          # token trial + getAllQueries
-            self._ok({"top_sources": {"MPhone|1.2.3.4": 1}}),  # topClients (token mode)
-        ])
-        result = self.h.get_dns_lookups(self.conn, "24h")
-        self.assertEqual(len(self.sess.post_calls), 0)  # no web login
-        self.assertEqual(result, [{"ip": "1.2.3.4", "count": 1}])
-        # verify auth param was passed
-        for url, params in self.sess.get_calls:
-            self.assertEqual(params.get("auth"), "pw")
-
-    def test_web_password_fallback_after_token_fail(self):
-        """Web password mode: token trial returns [] → falls back to login."""
-        rows = [[str(int(time.time()) - 30), "A", "ok.com", "MPhone", "2", "0"]]
-        self.sess.set_post([self._ok({})])
-        self.sess.set_get([
-            self._unauth(),                                     # token trial fails
-            self._ok({"data": rows}),                           # getAllQueries (session)
-            self._ok({"top_sources": {"MPhone|1.2.3.4": 1}}),  # topClients (session)
-        ])
-        result = self.h.get_dns_lookups(self.conn, "24h")
-        self.assertEqual(len(self.sess.post_calls), 1)
-        login_url, login_data = self.sess.post_calls[0]
-        self.assertEqual(login_url, "http://192.168.12.50:8080/admin/login.php")
-        self.assertEqual(login_data.get("pw"), "pw")
-        self.assertEqual(login_data.get("persistentlogin"), "on")
-        self.assertEqual(result, [{"ip": "1.2.3.4", "count": 1}])
-
-    def test_blocks_use_status_filter_and_name_map(self):
-        rows = [
-            [str(int(time.time()) - 5), "A", "ads.evil", "MPhone", "1", "0"],
-            [str(int(time.time()) - 5), "A", "ok.com", "MPhone", "2", "0"],
-            [str(int(time.time()) - 5), "A", "ads2.evil", "rokuPP", "4", "0"],
-        ]
-        self.sess.set_post([])
-        self.sess.set_get([
-            self._ok({"data": rows}),
-            self._ok({"top_sources": {"MPhone|1.2.3.4": 9, "rokuPP|5.6.7.8": 7}}),
-        ])
-        result = self.h.get_dns_blocks(self.conn, "24h")
-        by_ip = {d["ip"]: d["count"] for d in result}
-        self.assertEqual(by_ip, {"1.2.3.4": 1, "5.6.7.8": 1})
-
-    def test_unknown_hostname_falls_back_to_raw(self):
-        rows = [[str(int(time.time()) - 5), "A", "ok.com", "mystery-host", "2", "0"]]
-        self.sess.set_post([])
-        self.sess.set_get([
-            self._ok({"data": rows}),
-            self._ok({"top_sources": {"other|1.1.1.1": 1}}),
-        ])
-        result = self.h.get_dns_lookups(self.conn, "24h")
-        self.assertEqual(result, [{"ip": "mystery-host", "count": 1}])
-
-    def test_session_re_auth_on_failure(self):
-        """Session-mode: 500 on a GET triggers re-login and retry."""
-        rows = [[str(int(time.time()) - 5), "A", "ok.com", "MPhone", "2", "0"]]
-        self.sess.set_post([self._ok({}), self._ok({})])
-        self.sess.set_get([
-            self._unauth(),               # token trial fails
-            _FakeResp(500, "srv err"),    # first session GET fails
-            self._ok({"data": rows}),     # retry succeeds
-            self._ok({"top_sources": {"MPhone|1.2.3.4": 1}}),
-        ])
-        result = self.h.get_dns_lookups(self.conn, "24h")
-        self.assertEqual(result, [{"ip": "1.2.3.4", "count": 1}])
-        self.assertEqual(len(self.sess.post_calls), 2)  # initial + re-auth
-
-    def test_login_failure_raises(self):
-        self.sess.set_post([_FakeResp(403, "forbidden")])
-        self.sess.set_get([self._unauth()])
-        with self.assertRaises(Exception) as ctx:
-            self.h.get_dns_lookups(self.conn, "24h")
-        self.assertIn("web login failed", str(ctx.exception))
-
-
 class TestMockDnsLogDomains(unittest.TestCase):
     def test_blocks_by_domain(self):
         h = MockDnsLog()
@@ -568,76 +415,6 @@ class TestMockDnsLogDomains(unittest.TestCase):
         h = MockDnsLog()
         result = h.get_dns_lookups_for_client(None, '24h', '10.0.0.99')
         self.assertEqual(result, [])
-
-
-class TestPiHoleV5DomainAggregation(unittest.TestCase):
-    def test_aggregate_by_domain_blocks(self):
-        h = PiHoleV5DnsLog()
-        ts = int(time.time()) - 5
-        rows = [
-            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
-            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
-            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
-            [str(ts), "A", "ok.com", "MPhone", "2", "0"],  # not blocked
-        ]
-        counts = h._aggregate_by_domain(rows, True, 0, int(time.time()) + 100)
-        self.assertEqual(counts, {"ads.evil.com": 2, "tracker.net": 1})
-
-    def test_aggregate_by_domain_client_filter(self):
-        h = PiHoleV5DnsLog()
-        ts = int(time.time()) - 5
-        rows = [
-            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
-            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
-            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
-        ]
-        # filter to MPhone only
-        counts = h._aggregate_by_domain(rows, True, 0, int(time.time()) + 100,
-                                         client_keys={"MPhone"})
-        self.assertEqual(counts, {"ads.evil.com": 1, "tracker.net": 1})
-
-    def test_build_ip_to_names_reverse_map(self):
-        top_sources = {"MPhone|1.2.3.4": 10, "MLaptop|1.2.3.4": 5, "rokuPP|5.6.7.8": 3}
-        ip_to_names = PiHoleV5DnsLog._build_ip_to_names(top_sources)
-        self.assertEqual(ip_to_names["1.2.3.4"], {"MPhone", "MLaptop"})
-        self.assertEqual(ip_to_names["5.6.7.8"], {"rokuPP"})
-
-    def test_blocks_by_domain_via_http(self):
-        ts = int(time.time()) - 5
-        rows = [
-            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
-            [str(ts), "A", "ads.evil.com", "roku", "1", "0"],
-            [str(ts), "A", "tracker.net", "MPhone", "5", "0"],
-        ]
-        h = PiHoleV5DnsLog()
-        h._session = _FakeSession()
-        h._base_url = "http://192.168.12.50:8080"
-        h._session.set_post([])
-        h._session.set_get([_FakeResp(200, {"data": rows})])
-        result = h.get_dns_blocks_by_domain({"apikey": "pw"}, "24h")
-        by_domain = {d['domain']: d['count'] for d in result}
-        self.assertEqual(by_domain, {"ads.evil.com": 2, "tracker.net": 1})
-
-    def test_blocks_for_client_via_http(self):
-        ts = int(time.time()) - 5
-        rows = [
-            [str(ts), "A", "ads.evil.com", "MPhone", "1", "0"],
-            [str(ts), "A", "ads.evil.com", "rokuPP", "1", "0"],
-            [str(ts), "A", "tracker.net", "MPhone", "4", "0"],
-        ]
-        h = PiHoleV5DnsLog()
-        h._session = _FakeSession()
-        h._base_url = "http://192.168.12.50:8080"
-        conn = {"apikey": "pw"}
-        h._session.set_post([])
-        h._session.set_get([
-            _FakeResp(200, {"data": rows}),
-            _FakeResp(200, {"top_sources": {"MPhone|1.2.3.4": 10, "rokuPP|5.6.7.8": 5}}),
-        ])
-        result = h.get_dns_blocks_for_client(conn, "24h", "1.2.3.4")
-        by_domain = {d['domain']: d['count'] for d in result}
-        # only MPhone queries (matched via IP→hostname reverse map)
-        self.assertEqual(by_domain, {"ads.evil.com": 1, "tracker.net": 1})
 
 
 class TestPiHoleV6DomainAggregation(unittest.TestCase):
